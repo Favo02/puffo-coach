@@ -5,7 +5,7 @@ CLI tool that builds LLM-friendly Markdown context files from personal health, n
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+uv sync
 cp .env.example .env   # then fill in values
 ```
 
@@ -45,7 +45,7 @@ The database is opened in read-only mode.
 ## Usage
 
 ```bash
-python health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals --activities --health \
   --detail-level medium \
   -o ./output/
