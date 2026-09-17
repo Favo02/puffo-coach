@@ -369,8 +369,9 @@ class PuffoCoachApp(App):
 
         # Meals all toggle
         if chk_id == "chk_meals_all":
-            for meal_type in ALL_MEAL_TYPES:
-                self._set_checkbox_programmatic(f"chk_meal_{meal_type}", event.value)
+            if event.value:
+                for meal_type in ALL_MEAL_TYPES:
+                    self._set_checkbox_programmatic(f"chk_meal_{meal_type}", True)
 
         elif chk_id.startswith("chk_meal_"):
             all_checked = all(self.query_one(f"#chk_meal_{m}", Checkbox).value for m in ALL_MEAL_TYPES)
@@ -378,8 +379,9 @@ class PuffoCoachApp(App):
 
         # Activities all toggle
         elif chk_id == "chk_activities_all":
-            for sport in ("ride", "run", "hike", "walk", "swim", "workout"):
-                self._set_checkbox_programmatic(f"chk_sport_{sport}", event.value)
+            if event.value:
+                for sport in ("ride", "run", "hike", "walk", "swim", "workout"):
+                    self._set_checkbox_programmatic(f"chk_sport_{sport}", True)
 
         elif chk_id.startswith("chk_sport_"):
             all_checked = all(
@@ -387,6 +389,7 @@ class PuffoCoachApp(App):
                 for s in ("ride", "run", "hike", "walk", "swim", "workout")
             )
             self._set_checkbox_programmatic("chk_activities_all", all_checked)
+
 
         # Health metrics customization
         elif chk_id == "chk_health_defaults":
