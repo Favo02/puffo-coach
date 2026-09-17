@@ -8,9 +8,9 @@ from typing import Any
 
 import requests
 
-from auth.strava_oauth import StravaTokenManager
-from fetchers.base import BaseFetcher
-from models import Activity, ActivitySplit
+from puffo_coach.auth.strava_oauth import StravaTokenManager
+from puffo_coach.fetchers.base import BaseFetcher
+from puffo_coach.models import Activity, ActivitySplit
 
 
 class StravaFetcher(BaseFetcher):

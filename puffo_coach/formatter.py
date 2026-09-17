@@ -4,7 +4,7 @@ import collections
 from datetime import date, time
 from typing import Any
 
-from models import (
+from puffo_coach.models import (
     Activity, ActivitySplit, CategoryConfig, DailyMetricRow, HealthBundle,
     HrHourly, Meal, SleepSession, SleepStage,
 )

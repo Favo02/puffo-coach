@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""health-context: Build LLM-friendly Markdown context from personal data.
+"""Puffo Coach: Build LLM-friendly Markdown context from personal data.
 
 Fetches meals (TimeTagger), activities (Strava), and health vitals
 (ZeppBridge SQLite) for a date range and formats them into a single
@@ -13,7 +13,7 @@ import sys
 from datetime import date, datetime
 from pathlib import Path
 
-from models import CategoryConfig
+from puffo_coach.models import CategoryConfig
 
 # ── Constants ─────────────────────────────────────────────────────────
 
@@ -62,8 +62,8 @@ def _resolve_detail(category_detail: str | None, global_detail: str) -> str:
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        prog="health_context",
-        description="Build LLM-friendly Markdown context from personal data.",
+        prog="puffo-coach",
+        description="Puffo Coach: Build LLM-friendly Markdown context from personal data.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""examples:
   # Everything, medium detail
@@ -235,7 +235,7 @@ def main() -> None:
 
     # ── Fetch meals from TimeTagger ───────────────────────────────────
     if configs["meals"].enabled:
-        from fetchers.timetagger import TimeTaggerFetcher
+        from puffo_coach.fetchers.timetagger import TimeTaggerFetcher
 
         cfg = configs["meals"]
         print(f"⏳ Fetching meals from TimeTagger ({from_date} → {to_date})…")
@@ -244,7 +244,7 @@ def main() -> None:
 
     # ── Fetch activities from Strava ──────────────────────────────────
     if configs["activities"].enabled:
-        from fetchers.strava import StravaFetcher
+        from puffo_coach.fetchers.strava import StravaFetcher
 
         cfg = configs["activities"]
         print(f"⏳ Fetching activities from Strava ({from_date} → {to_date})…")
@@ -257,7 +257,7 @@ def main() -> None:
 
     # ── Fetch health vitals from ZeppBridge ───────────────────────────
     if configs["health"].enabled:
-        from fetchers.zepp_sqlite import ZeppSqliteReader
+        from puffo_coach.fetchers.zepp_sqlite import ZeppSqliteReader
 
         cfg = configs["health"]
         print(f"⏳ Fetching health data from ZeppBridge ({from_date} → {to_date})…")
@@ -273,7 +273,7 @@ def main() -> None:
         )
 
     # ── Format ────────────────────────────────────────────────────────
-    from formatter import MarkdownFormatter
+    from puffo_coach.formatter import MarkdownFormatter
 
     md = MarkdownFormatter(configs).render(
         meals=meals,
@@ -286,9 +286,12 @@ def main() -> None:
     # ── Write output ──────────────────────────────────────────────────
     default_name = f"context_from_{from_date}_to_{to_date}.md"
     if args.output:
-        out = Path(args.output)
-        if out.is_dir():
-            out = out / default_name
+        out_path = Path(args.output)
+        if str(args.output).endswith(("/", "\\")) or out_path.is_dir() or (out_path.suffix == "" and not out_path.exists()):
+            out_path.mkdir(parents=True, exist_ok=True)
+            out = out_path / default_name
+        else:
+            out = out_path
     else:
         out = Path.cwd() / default_name
 

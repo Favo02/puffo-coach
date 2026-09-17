@@ -1,4 +1,4 @@
-"""Configuration loader for health-context.
+"""Configuration loader for Puffo Coach.
 
 Reads secrets and paths from a .env file (via python-dotenv) and
 exposes them as module-level constants. Fails fast with a clear error
@@ -13,8 +13,10 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Load .env from the project root (same directory as this file).
-_ENV_PATH = Path(__file__).resolve().parent / ".env"
+# Load .env from the project root (parent directory of this package) or CWD.
+_ENV_PATH = Path(__file__).resolve().parent.parent / ".env"
+if not _ENV_PATH.exists():
+    _ENV_PATH = Path.cwd() / ".env"
 load_dotenv(_ENV_PATH)
 
 

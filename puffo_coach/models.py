@@ -1,4 +1,4 @@
-"""Domain models for health-context.
+"""Domain models for Puffo Coach.
 
 Pure dataclasses with no logic. These define the contract between
 fetchers (which produce them) and the formatter (which consumes them).

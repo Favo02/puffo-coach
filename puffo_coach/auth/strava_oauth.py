@@ -12,9 +12,10 @@ from urllib.parse import urlparse, parse_qs
 
 import requests
 
-from config import require_strava
+from puffo_coach.config import require_strava
 
-TOKEN_PATH = Path.home() / '.health-context' / 'strava_tokens.json'
+PRIMARY_TOKEN_PATH = Path.home() / '.puffo-coach' / 'strava_tokens.json'
+LEGACY_TOKEN_PATH = Path.home() / '.health-context' / 'strava_tokens.json'
 CALLBACK_PORT = 5739
 
 
@@ -61,7 +62,7 @@ class StravaTokenManager:
             f"&scope=activity:read_all"
             f"&approval_prompt=auto"
         )
-        print("Please authorize health-context to access your Strava data.")
+        print("Please authorize Puffo Coach to access your Strava data.")
         print(f"Opening browser to: {url}")
         webbrowser.open(url)
 
@@ -104,15 +105,16 @@ class StravaTokenManager:
         return data["access_token"]
 
     def _load_tokens(self) -> dict | None:
-        if not TOKEN_PATH.exists():
+        path = PRIMARY_TOKEN_PATH if PRIMARY_TOKEN_PATH.exists() else LEGACY_TOKEN_PATH
+        if not path.exists():
             return None
         try:
-            with open(TOKEN_PATH, "r") as f:
+            with open(path, "r") as f:
                 return json.load(f)
         except (json.JSONDecodeError, OSError):
             return None
 
     def _save_tokens(self, tokens: dict) -> None:
-        TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(TOKEN_PATH, "w") as f:
+        PRIMARY_TOKEN_PATH.parent.mkdir(parents=True, exist_ok=True)
+        with open(PRIMARY_TOKEN_PATH, "w") as f:
             json.dump(tokens, f)

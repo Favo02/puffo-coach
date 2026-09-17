@@ -8,9 +8,9 @@ from typing import Any
 
 import requests
 
-import config
-from models import Meal
-from fetchers.base import BaseFetcher
+from puffo_coach import config
+from puffo_coach.models import Meal
+from puffo_coach.fetchers.base import BaseFetcher
 
 MEAL_TAGS = ('colazione', 'pranzo', 'cena', 'merenda')
 MEAL_PATTERN = re.compile(

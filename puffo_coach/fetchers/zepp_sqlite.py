@@ -6,9 +6,9 @@ import sqlite3
 from datetime import date
 from typing import Any
 
-from config import require_zepp
-from fetchers.base import BaseFetcher
-from models import (
+from puffo_coach.config import require_zepp
+from puffo_coach.fetchers.base import BaseFetcher
+from puffo_coach.models import (
     DailyMetricRow,
     HealthBundle,
     HrHourly,
