@@ -28,13 +28,20 @@ class TimeTaggerFetcher(BaseFetcher):
         """Initialize the fetcher and ensure TimeTagger configuration is present."""
         self.url, self.token = config.require_timetagger()
 
-    def fetch(self, from_date: date, to_date: date, **kwargs: Any) -> list[Meal]:
+    def fetch(
+        self,
+        from_date: date,
+        to_date: date,
+        meal_types: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[Meal]:
         """Fetch meals from TimeTagger for the given date range.
 
         Args:
             from_date: Start of range (inclusive).
             to_date: End of range (inclusive).
-            **kwargs: Additional options.
+            meal_types: Meal types to include (e.g., ['colazione', 'pranzo']).
+                        Empty list or None means all types.
 
         Returns:
             A list of Meal objects sorted by date and time.
@@ -51,6 +58,9 @@ class TimeTaggerFetcher(BaseFetcher):
         except requests.RequestException as e:
             raise RuntimeError(f"TimeTagger fetch failed: {e}") from e
 
+        # Normalize filter to a set for fast lookup (empty = all).
+        type_filter: set[str] = {t.lower() for t in meal_types} if meal_types else set()
+
         data = response.json()
         meals: list[Meal] = []
 
@@ -58,20 +68,24 @@ class TimeTaggerFetcher(BaseFetcher):
             ds = record.get("ds", "")
             match = MEAL_PATTERN.search(ds)
             if match:
+                meal_type = match.group(1).lower()
+
+                # Skip if a filter is active and this type isn't included.
+                if type_filter and meal_type not in type_filter:
+                    continue
+
                 record_t1 = record.get("t1")
                 if record_t1 is None:
                     continue
-                
+
                 dt = datetime.fromtimestamp(record_t1)
                 meal = Meal(
                     date=dt.date(),
                     time=dt.time(),
-                    meal_type=match.group(1).lower(),
+                    meal_type=meal_type,
                     food=match.group(2).strip(),
                 )
                 meals.append(meal)
 
-        # Sort by date then time
         meals.sort(key=lambda m: (m.date, m.time))
-        
         return meals

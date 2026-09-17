@@ -22,25 +22,44 @@ class StravaFetcher(BaseFetcher):
         self.token_manager = StravaTokenManager()
         self.session = requests.Session()
 
-    def fetch(self, from_date: date, to_date: date, detail_level: str = 'medium', **kwargs: Any) -> list[Activity]:
+    def fetch(
+        self,
+        from_date: date,
+        to_date: date,
+        detail_level: str = "medium",
+        sport_types: list[str] | None = None,
+        **kwargs: Any,
+    ) -> list[Activity]:
         """Fetch Strava activities within the given date range.
         
-        detail_level: 'low' (summary only), 'medium' (with detail call), 'high' (same as medium)
+        Args:
+            from_date: Start of range (inclusive).
+            to_date: End of range (inclusive).
+            detail_level: 'low' (summary only), 'medium'/'high' (with detail call).
+            sport_types: Activity types to include (e.g., ['ride', 'run']).
+                         Case-insensitive substring match. Empty/None means all.
         """
         access_token = self.token_manager.get_access_token()
         self.session.headers.update({"Authorization": f"Bearer {access_token}"})
         
-        # Convert dates to epoch timestamps
-        # Use start of day for from_date, end of day for to_date
         dt_from = datetime.combine(from_date, datetime.min.time())
         dt_to = datetime.combine(to_date, datetime.max.time())
         after_epoch = int(dt_from.timestamp())
         before_epoch = int(dt_to.timestamp())
         
         activities_summary = self._list_activities(after_epoch, before_epoch)
+
+        # Normalize filter for case-insensitive substring matching.
+        type_filter = [t.lower() for t in sport_types] if sport_types else []
         
         activities = []
         for summary in activities_summary:
+            # Apply sport type filter (case-insensitive substring match).
+            if type_filter:
+                sport = summary.get("sport_type", "").lower()
+                if not any(f in sport for f in type_filter):
+                    continue
+
             activity_id = summary["id"]
             
             if detail_level in ("medium", "high"):
@@ -51,7 +70,6 @@ class StravaFetcher(BaseFetcher):
             activity = self._build_activity(summary, detail)
             activities.append(activity)
             
-        # Sort by start_date_local just in case
         activities.sort(key=lambda a: a.start_date_local)
         return activities
 
@@ -127,7 +145,6 @@ class StravaFetcher(BaseFetcher):
         limit = resp.headers.get("X-RateLimit-Limit")
         if usage and limit:
             try:
-                # Format: "15min_usage,daily_usage"
                 usages = [int(x) for x in usage.split(",")]
                 limits = [int(x) for x in limit.split(",")]
                 for u, l in zip(usages, limits):

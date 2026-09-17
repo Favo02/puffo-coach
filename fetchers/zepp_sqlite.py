@@ -1,4 +1,4 @@
-"""ZeppLife SQLite database fetcher."""
+"""ZeppBridge SQLite database fetcher."""
 
 from __future__ import annotations
 
@@ -25,15 +25,21 @@ class ZeppSqliteReader(BaseFetcher):
         self.db_path = require_zepp()
 
     def fetch(
-        self, from_date: date, to_date: date, detail_level: str = "medium", **kwargs: Any
+        self,
+        from_date: date,
+        to_date: date,
+        detail_level: str = "medium",
+        metrics: list[str] | None = None,
+        **kwargs: Any,
     ) -> HealthBundle:
         """Fetch health data for the given date range.
 
         Args:
             from_date: Start of range (inclusive).
             to_date: End of range (inclusive).
-            detail_level: 'low', 'medium', or 'high'. Controls amount of data fetched.
-            **kwargs: Ignored fetch options.
+            detail_level: 'low', 'medium', or 'high'. Controls sleep stages and hourly HR.
+            metrics: Explicit list of daily metrics to query. When provided,
+                     this overrides the detail-level-based defaults entirely.
 
         Returns:
             HealthBundle containing sleep, daily metrics, and hourly HR (if high detail).
@@ -43,9 +49,9 @@ class ZeppSqliteReader(BaseFetcher):
             conn.row_factory = sqlite3.Row
 
             sleep = self._query_sleep(conn, from_date, to_date, detail_level)
-            daily = self._query_daily(conn, from_date, to_date, detail_level)
-            
-            hr_hourly = []
+            daily = self._query_daily(conn, from_date, to_date, metrics or [])
+
+            hr_hourly: list[HrHourly] = []
             if detail_level == "high":
                 hr_hourly = self._query_hr_hourly(conn, from_date, to_date)
 
@@ -99,18 +105,17 @@ class ZeppSqliteReader(BaseFetcher):
         return sessions
 
     def _query_daily(
-        self, conn: sqlite3.Connection, from_date: date, to_date: date, detail_level: str
+        self, conn: sqlite3.Connection, from_date: date, to_date: date,
+        metrics: list[str],
     ) -> list[DailyMetricRow]:
-        if detail_level == "high":
-            metrics = [
-                "resting_hr", "sleep_hrv", "sleep_rhr", "readiness", "steps", 
-                "calories", "active_calories", "spo2_night_score", "vo2max", 
-                "respiratory_rate", "training_load", "physical_readiness", "mental_readiness"
-            ]
-        else:
-            metrics = [
-                "resting_hr", "sleep_hrv", "readiness", "steps", "calories", "spo2_night_score"
-            ]
+        """Query daily metrics for the given list.
+
+        The caller (CLI) is responsible for choosing which metrics to include
+        based on detail level and user overrides. This method just queries
+        whatever it's told to.
+        """
+        if not metrics:
+            return []
 
         placeholders = ",".join(["?"] * len(metrics))
         query = f"""
