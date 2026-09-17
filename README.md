@@ -1,70 +1,79 @@
-# Health Context
+# Puffo Coach
 
-<img width="80" src="icon.svg" align="right">
+<img width="80" src="assets/icon.svg" align="right" alt="Puffo Coach logo">
 
-CLI tool that builds LLM-friendly Markdown context files from personal health ([Zepp](https://www.zepp.com/)), nutrition ([TimeTagger](https://timetagger.app/)), and fitness data ([Strava](https://www.strava.com/)).
+CLI tool that builds clean, LLM-friendly Markdown context files from personal health ([Zepp](https://www.zepp.com/)), nutrition ([TimeTagger](https://timetagger.app/)), and fitness data ([Strava](https://www.strava.com/)).
 
-> [!INFO]
-> The sources of the data are very opinionated.
+> [!NOTE]
+> The data sources and formats reflect a personalized tracking workflow (and are very opinionated):
 >
-> - I track all my meals with a personal format in my TimeTagger instance.
-> - I upload all my workouts/activities to Strava.
-> - I own a device that transmits vital metrics to Zepp. These data are "fetched" by ZeppBridge (more on that below).
+> - **Meals**: Tracked in TimeTagger using custom tag and bracket formatting (`#colazione [food items]`).
+> - **Workouts**: Recorded on-device and synced directly to Strava.
+> - **Vitals & Sleep**: Recorded by a Zepp-compatible wearable and exported to a local SQLite database via ZeppBridge.
 
 ## Setup
 
 ```bash
 uv sync
-cp .env.example .env   # then fill in values
+cp .env.example .env   # then fill in your credentials
 ```
 
 ### TimeTagger
 
-1. Open your TimeTagger (self-hosted or official) instance.
-2. Go to **Settings > API Tokens** and generate a token.
-3. Set in `.env`:
-   ```
+1. Open your TimeTagger instance (self-hosted or hosted at [timetagger.app](https://timetagger.app/)).
+2. Navigate to **Settings > API Tokens** and generate an API token.
+3. Add to `.env`:
+   ```env
    TIMETAGGER_URL=<your-timetagger-url>
-   TIMETAGGER_TOKEN=<token>
+   TIMETAGGER_TOKEN=<your-token>
    ```
 
-Meals are identified by tags `#colazione`, `#pranzo`, `#cena`, `#merenda` followed by `[food items]` in the description. Anything between the tag and brackets is ignored.
+Meals are parsed by searching for the tags `#colazione`, `#pranzo`, `#cena`, or `#merenda` followed by bracketed food items `[...]`. Any text between the tag and brackets is ignored.
+
+_Example_: `#colazione al bar [brioche, cappuccio]` is extracted as meal type `colazione` with food items `brioche, cappuccio`.
 
 ### Strava
 
-1. Go to [strava.com/settings/api](https://www.strava.com/settings/api) and create an app:
+1. Navigate to [strava.com/settings/api](https://www.strava.com/settings/api) and create an application:
    - **Authorization Callback Domain**: `localhost`
    - **Website**: `http://localhost`
-2. Set in `.env`:
+2. Add your credentials to `.env`:
+   ```env
+   STRAVA_CLIENT_ID=<your-client-id>
+   STRAVA_CLIENT_SECRET=<your-client-secret>
    ```
-   STRAVA_CLIENT_ID=<your client id>
-   STRAVA_CLIENT_SECRET=<your client secret>
-   ```
-3. On first run with `--activities`, a browser window opens for OAuth authorization. A local server on `localhost:5739` captures the callback. Tokens are saved to `~/.health-context/strava_tokens.json` and auto-refresh on subsequent runs.
+3. On your first run with `--activities`, a browser window opens for OAuth authorization. A temporary local server on `localhost:5739` captures the callback code. Tokens are saved to `~/.puffo-coach/strava_tokens.json` and refresh automatically on subsequent runs.
 
 ### ZeppBridge
 
-1. Install [ZeppBridge](https://zeppbridge.pages.dev/) and let it sync the data into a local database.
-2. Find the local database `zepp.db` path from **Settings > Advanced > Open data folder**
-3. Set in `.env`:
-   ```
+1. Install [ZeppBridge](https://zeppbridge.pages.dev/) to sync wearable data into a local SQLite database.
+2. Locate your `zepp.db` path via **Settings > Advanced > Open data folder**.
+3. Add the path to `.env`:
+   ```env
    ZEPP_DB_PATH=<path-to-zeppbridge-data>/zepp.db
    ```
 
-The database is opened in read-only mode.
+The database is accessed strictly in read-only mode (`?mode=ro`).
 
 > [!WARNING]
-> ZeppBridge is an open-source third-party tool that _somehow_ extracts data from Zepp.
-> It uses OAuth to access your Zepp profile, then saves all data to a local database.
-> There should be no calls-home or third-party servers involved, but I have not done a security audit.
+> ZeppBridge is a third-party open-source tool that syncs data from Zepp via OAuth into a local SQLite database.
+> All data remains on your local machine with no external telemetry, though it has not undergone an independent security audit.
 
 ## Usage
 
+Run via `uv`:
+
 ```bash
-uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals --activities --health \
   --detail-level medium \
   -o ./output/
+```
+
+Alternatively, invoke as a Python module:
+
+```bash
+uv run python -m puffo_coach --from-date 2026-09-01 --to-date 2026-09-07 --meals --activities --health
 ```
 
 ### Arguments
@@ -88,20 +97,20 @@ At least one of `--meals`, `--activities`, `--health` must be specified.
 
 ```bash
 # Everything, medium detail
-uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals --activities --health
 
 # Only breakfast and dinner
-uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals colazione,cena
 
-# Only rides at high detail, health at low detail with 3 metrics
-uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+# Only rides at high detail, health at low detail with 3 core metrics
+uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --activities ride --activities-detail high \
   --health resting_hr,sleep_hrv,readiness --health-detail low
 
 # Runs and hikes only
-uv run health_context.py --from-date 2026-09-01 --to-date 2026-09-07 \
+uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --activities run,hike --activities-detail high
 ```
 
@@ -128,10 +137,10 @@ Activity types use **case-insensitive substring matching** against Strava's `spo
 
 ## Design Choices
 
-- **Output format**: XML tags inside Markdown. Token-efficient, unambiguous for LLMs, and human-readable.
-- **Meals are always fully listed** regardless of detail level. Volume is inherently low.
-- **Vitals compression**: HR is 1440 samples/day; even at `high` we aggregate to hourly. At `low`, range averages.
-- **Strava for workouts**: ZeppBridge workout data is not used. Strava's processing is trusted and its API natively provides per-km splits.
-- **Curated health metrics**: Only actionable daily metrics are included by default. Stress is excluded (unreliable estimate) but can be opted in.
-- **Lazy validation**: Env vars for unused data sources are not required. `--meals` without Strava credentials is fine.
-- **Per-category detail**: Each category (meals, activities, health) can have its own compression level, falling back to the global `--detail-level`.
+- **Output format**: XML tags inside Markdown. Token-efficient, unambiguous for LLMs, and easily readable by humans.
+- **Meals are always fully listed**: Given the low daily volume of meals, full fidelity is preserved across all detail levels.
+- **Vitals compression**: Heart rate produces 1,440 samples/day; even at `high` detail it is aggregated hourly, while `low` detail provides multi-day statistical summaries.
+- **Strava for workouts**: Activity data is sourced exclusively from Strava to leverage its trusted processing algorithms and native per-kilometer split calculations.
+- **Curated health metrics**: Only actionable, reliable metrics are included by default (unreliable estimates like watch stress are excluded by default, but can be explicitly requested).
+- **Lazy validation**: Environment variables for unused data sources are not required; running `--meals` alone will not fail if Strava credentials are unset.
+- **Per-category detail**: Each data category (meals, activities, health) can have its own compression level, falling back to the global `--detail-level`.
