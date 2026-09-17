@@ -120,6 +120,15 @@ class TestTuiApp(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(out_file.exists())
                 self.assertEqual(out_file.read_text(encoding="utf-8"), dummy.markdown)
 
+    async def test_command_palette_disabled(self) -> None:
+        app = PuffoCoachApp()
+        async with app.run_test() as pilot:
+            self.assertFalse(app.ENABLE_COMMAND_PALETTE)
+            await pilot.press("ctrl+p")
+            await pilot.pause(0.05)
+            self.assertEqual(len(app.screen_stack), 1)
+
 
 if __name__ == "__main__":
     unittest.main()
+

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import shutil
 import subprocess
 from datetime import date, datetime
@@ -21,10 +20,8 @@ from textual.widgets import (
     Header,
     Input,
     Label,
-    LoadingIndicator,
     Markdown,
     Select,
-    Static,
 )
 
 from puffo_coach.models import CategoryConfig
@@ -69,10 +66,11 @@ def copy_text_to_clipboard(text: str, app: App | None = None) -> bool:
 
 
 class PuffoCoachApp(App):
-    """Main Textual application for Puffo Coach."""
+    """Clean, focused Textual application for Puffo Coach."""
 
     TITLE = "Puffo Coach"
-    SUB_TITLE = "Health & Fitness Context Builder for LLMs"
+    SUB_TITLE = "Context Builder for LLMs"
+    ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
         Binding("g", "generate_context", "Generate Context", priority=True),
@@ -84,33 +82,34 @@ class PuffoCoachApp(App):
 
     DEFAULT_CSS = """
     Screen {
-        layout: horizontal;
         background: $surface;
-    }
-
-    #sidebar {
-        width: 52;
-        height: 100%;
-        border-right: heavy $primary-background;
-        padding: 0 1;
-        background: $surface-darken-1;
-    }
-
-    #main_content {
-        width: 1fr;
-        height: 100%;
-        padding: 1;
-        layout: vertical;
     }
 
     #actions_bar {
         height: auto;
-        margin-bottom: 1;
-        align: left middle;
+        dock: top;
+        padding: 0 1;
+        background: $surface-darken-1;
+        border-bottom: solid $primary;
+        layout: horizontal;
+        align-vertical: middle;
     }
 
     #actions_bar Button {
         margin-right: 1;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+
+    #footer_stats {
+        height: auto;
+        margin-left: 1;
+        color: $text-muted;
+    }
+
+    #settings_scroll {
+        height: 1fr;
+        padding: 0 1;
     }
 
     .section_heading {
@@ -122,16 +121,21 @@ class PuffoCoachApp(App):
 
     .field_label {
         color: $text-muted;
-        margin-top: 1;
+        margin-top: 0;
+        margin-bottom: 0;
     }
 
     .row {
         height: auto;
         layout: horizontal;
+        margin-top: 0;
+        margin-bottom: 0;
     }
 
     .half_col {
         width: 1fr;
+        height: auto;
+        margin-right: 1;
     }
 
     .grid_2col {
@@ -141,41 +145,25 @@ class PuffoCoachApp(App):
         height: auto;
     }
 
+    .grid_3col {
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 0;
+        height: auto;
+    }
+
     Collapsible {
         padding: 0;
         margin-top: 1;
+        margin-bottom: 0;
         border: round $primary-darken-2;
     }
 
     #preview_container {
-        height: 1fr;
-        border: solid $primary;
+        height: 20;
+        border: solid $primary-darken-1;
         background: $background;
-        padding: 1;
-    }
-
-    #welcome_box {
-        padding: 1;
-        color: $text;
-    }
-
-    #status_box {
-        padding: 1;
-        color: $accent;
-    }
-
-    #error_box {
-        padding: 1;
-        color: $error;
-        border: solid $error;
-        background: $error-darken-3;
-    }
-
-    #footer_stats {
-        height: 1;
-        color: $text-muted;
         padding: 0 1;
-        margin-top: 1;
     }
     """
 
@@ -185,114 +173,109 @@ class PuffoCoachApp(App):
         self._programmatic_widgets: set[str] = set()
 
     def compose(self) -> ComposeResult:
-        yield Header(show_clock=True)
+        yield Header(show_clock=False)
 
-        with Horizontal():
-            # Left sidebar: Configuration
-            with VerticalScroll(id="sidebar"):
-                yield Label("📅 Date Range", classes="section_heading")
-                preset_options = [(label, key) for key, label in DATE_PRESETS] + [("Custom", "custom")]
-                yield Select(preset_options, value="last_7d", id="sel_preset", allow_blank=False)
+        # Top action and status bar
+        with Horizontal(id="actions_bar"):
+            yield Button("Generate Context (g)", id="btn_generate", variant="primary")
+            yield Button("Copy to Clipboard (c)", id="btn_copy")
+            yield Button("Save to File (s)", id="btn_save")
+            yield Label("Status: Ready", id="footer_stats")
 
-                start_d, end_d = get_date_preset("last_7d")
+        # Main settings container
+        with VerticalScroll(id="settings_scroll"):
+            # ── Date Range ────────────────────────────────────────────
+            yield Label("Date Range", classes="section_heading")
+            preset_options = [(label, key) for key, label in DATE_PRESETS] + [("Custom", "custom")]
+            yield Select(preset_options, value="last_7d", id="sel_preset", allow_blank=False)
+
+            start_d, end_d = get_date_preset("last_7d")
+            with Horizontal(classes="row"):
+                with Vertical(classes="half_col"):
+                    yield Label("From", classes="field_label")
+                    yield Input(value=str(start_d), id="inp_from_date", placeholder="YYYY-MM-DD")
+                with Vertical(classes="half_col"):
+                    yield Label("To", classes="field_label")
+                    yield Input(value=str(end_d), id="inp_to_date", placeholder="YYYY-MM-DD")
+
+            # ── General Settings ──────────────────────────────────────
+            yield Label("General Settings", classes="section_heading")
+            detail_options = [(lvl.capitalize(), lvl) for lvl in DETAIL_LEVELS]
+            with Horizontal(classes="row"):
+                with Vertical(classes="half_col"):
+                    yield Label("Global Detail Level", classes="field_label")
+                    yield Select(detail_options, value="medium", id="sel_global_detail", allow_blank=False)
+                with Vertical(classes="half_col"):
+                    yield Label("Output File Path (optional)", classes="field_label")
+                    yield Input(placeholder="context_from_...md (blank for auto-name)", id="inp_output_path")
+
+            # ── Data Sources ──────────────────────────────────────────
+            yield Label("Data Sources", classes="section_heading")
+
+            # Meals (TimeTagger)
+            with Collapsible(title="Meals (TimeTagger)", id="col_meals", collapsed=False):
                 with Horizontal(classes="row"):
-                    with Vertical(classes="half_col"):
-                        yield Label("From", classes="field_label")
-                        yield Input(value=str(start_d), id="inp_from_date", placeholder="YYYY-MM-DD")
-                    with Vertical(classes="half_col"):
-                        yield Label("To", classes="field_label")
-                        yield Input(value=str(end_d), id="inp_to_date", placeholder="YYYY-MM-DD")
-
-                yield Label("⚙️ Global Detail Level", classes="section_heading")
-                detail_options = [(lvl.capitalize(), lvl) for lvl in DETAIL_LEVELS]
-                yield Select(detail_options, value="medium", id="sel_global_detail", allow_blank=False)
-
-                yield Label("📦 Data Sources", classes="section_heading")
-
-                # ── Meals Collapsible ──────────────────────────────────
-                with Collapsible(title="🍽️ Meals (TimeTagger)", id="col_meals", collapsed=False):
                     yield Checkbox("Enable Meals", value=True, id="chk_meals_enabled")
-                    yield Label("Meals Detail Override", classes="field_label")
-                    meals_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
-                    yield Select(meals_detail_opts, value="inherit", id="sel_meals_detail", allow_blank=False)
-
-                    yield Label("Meal Types", classes="field_label")
                     yield Checkbox("All Meal Types", value=True, id="chk_meals_all")
-                    with Container(classes="grid_2col", id="cnt_meals_types"):
-                        yield Checkbox("Colazione", value=True, id="chk_meal_colazione")
-                        yield Checkbox("Pranzo", value=True, id="chk_meal_pranzo")
-                        yield Checkbox("Cena", value=True, id="chk_meal_cena")
-                        yield Checkbox("Merenda", value=True, id="chk_meal_merenda")
+                with Container(classes="grid_2col", id="cnt_meals_types"):
+                    yield Checkbox("Colazione", value=True, id="chk_meal_colazione")
+                    yield Checkbox("Pranzo", value=True, id="chk_meal_pranzo")
+                    yield Checkbox("Cena", value=True, id="chk_meal_cena")
+                    yield Checkbox("Merenda", value=True, id="chk_meal_merenda")
 
-                # ── Activities Collapsible ──────────────────────────────
-                with Collapsible(title="🏃 Activities (Strava)", id="col_activities", collapsed=False):
+            # Activities (Strava)
+            with Collapsible(title="Activities (Strava)", id="col_activities", collapsed=False):
+                with Horizontal(classes="row"):
                     yield Checkbox("Enable Activities", value=True, id="chk_activities_enabled")
-                    yield Label("Activities Detail Override", classes="field_label")
-                    act_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
-                    yield Select(act_detail_opts, value="inherit", id="sel_activities_detail", allow_blank=False)
+                    with Vertical(classes="half_col"):
+                        yield Label("Detail Override", classes="field_label")
+                        act_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
+                        yield Select(act_detail_opts, value="inherit", id="sel_activities_detail", allow_blank=False)
+                yield Checkbox("All Sport Types", value=True, id="chk_activities_all")
+                with Container(classes="grid_3col", id="cnt_activities_types"):
+                    yield Checkbox("Ride", value=True, id="chk_sport_ride")
+                    yield Checkbox("Run", value=True, id="chk_sport_run")
+                    yield Checkbox("Hike", value=True, id="chk_sport_hike")
+                    yield Checkbox("Walk", value=True, id="chk_sport_walk")
+                    yield Checkbox("Swim", value=True, id="chk_sport_swim")
+                    yield Checkbox("Workout", value=True, id="chk_sport_workout")
+                yield Input(placeholder="Custom sports (e.g. soccer, virtualride)", id="inp_custom_sports")
 
-                    yield Label("Sport Types", classes="field_label")
-                    yield Checkbox("All Sport Types", value=True, id="chk_activities_all")
-                    with Container(classes="grid_2col", id="cnt_activities_types"):
-                        yield Checkbox("Ride", value=True, id="chk_sport_ride")
-                        yield Checkbox("Run", value=True, id="chk_sport_run")
-                        yield Checkbox("Hike", value=True, id="chk_sport_hike")
-                        yield Checkbox("Walk", value=True, id="chk_sport_walk")
-                        yield Checkbox("Swim", value=True, id="chk_sport_swim")
-                        yield Checkbox("Workout", value=True, id="chk_sport_workout")
-                    yield Input(placeholder="Custom sports (e.g. soccer, virtualride)", id="inp_custom_sports")
-
-                # ── Health Collapsible ──────────────────────────────────
-                with Collapsible(title="❤️ Health Vitals (ZeppBridge)", id="col_health", collapsed=False):
+            # Health Vitals (ZeppBridge)
+            with Collapsible(title="Health Vitals (ZeppBridge)", id="col_health", collapsed=False):
+                with Horizontal(classes="row"):
                     yield Checkbox("Enable Health Vitals", value=True, id="chk_health_enabled")
-                    yield Label("Health Detail Override", classes="field_label")
-                    health_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
-                    yield Select(health_detail_opts, value="inherit", id="sel_health_detail", allow_blank=False)
-
-                    yield Label("Metrics Customization", classes="field_label")
+                    with Vertical(classes="half_col"):
+                        yield Label("Detail Override", classes="field_label")
+                        health_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
+                        yield Select(health_detail_opts, value="inherit", id="sel_health_detail", allow_blank=False)
+                with Horizontal(classes="row"):
                     yield Checkbox("Use defaults for detail level", value=True, id="chk_health_defaults")
-                    yield Button("↺ Reset to Detail Defaults", id="btn_reset_health_metrics")
+                    yield Button("Reset to Defaults", id="btn_reset_health_metrics")
 
-                    yield Label("Core Vitals", classes="field_label")
-                    with Container(classes="grid_2col", id="cnt_health_core"):
-                        for metric in HEALTH_METRICS_CORE:
-                            yield Checkbox(metric, value=True, id=f"chk_metric_{metric}")
+                yield Label("Core Vitals", classes="field_label")
+                with Container(classes="grid_3col", id="cnt_health_core"):
+                    for metric in HEALTH_METRICS_CORE:
+                        yield Checkbox(metric, value=True, id=f"chk_metric_{metric}")
 
-                    yield Label("Advanced Vitals", classes="field_label")
-                    with Container(classes="grid_2col", id="cnt_health_adv"):
-                        adv_metrics = [m for m in HEALTH_METRICS_HIGH if m not in HEALTH_METRICS_CORE]
-                        for metric in adv_metrics:
-                            yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
+                yield Label("Advanced Vitals", classes="field_label")
+                with Container(classes="grid_3col", id="cnt_health_adv"):
+                    adv_metrics = [m for m in HEALTH_METRICS_HIGH if m not in HEALTH_METRICS_CORE]
+                    for metric in adv_metrics:
+                        yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
 
-                    yield Label("Additional Vitals", classes="field_label")
-                    with Container(classes="grid_2col", id="cnt_health_extra"):
-                        extra_metrics = [m for m in ALL_KNOWN_METRICS if m not in HEALTH_METRICS_HIGH]
-                        for metric in extra_metrics:
-                            yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
+                yield Label("Additional Vitals", classes="field_label")
+                with Container(classes="grid_3col", id="cnt_health_extra"):
+                    extra_metrics = [m for m in ALL_KNOWN_METRICS if m not in HEALTH_METRICS_HIGH]
+                    for metric in extra_metrics:
+                        yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
 
-                    yield Input(placeholder="Additional metrics (e.g. pai_total, afib_readiness)", id="inp_custom_metrics")
+                yield Input(placeholder="Additional metrics (e.g. pai_total, afib_readiness)", id="inp_custom_metrics")
 
-                # ── Output file ─────────────────────────────────────────
-                yield Label("📁 Output File", classes="section_heading")
-                yield Input(placeholder="context_from_...md (blank for auto-name)", id="inp_output_path")
-
-            # Right main panel: Actions & Markdown Output Preview
-            with Vertical(id="main_content"):
-                with Horizontal(id="actions_bar"):
-                    yield Button("⚡ Generate Context (g)", id="btn_generate", variant="primary")
-                    yield Button("📋 Copy to Clipboard (c)", id="btn_copy", variant="default")
-                    yield Button("💾 Save to File (s)", id="btn_save", variant="success")
-
+            # Output Preview (collapsed by default to keep settings front and center)
+            with Collapsible(title="Output Preview", id="col_preview", collapsed=True):
                 with VerticalScroll(id="preview_container"):
-                    yield Static(
-                        "### 👋 Welcome to Puffo Coach\n\n"
-                        "Configure your date range and data sources on the left panel, "
-                        "then click **Generate Context** or press `g`.\n\n"
-                        "Once generated, preview the rendered XML/Markdown here and copy or save directly.",
-                        id="welcome_box",
-                    )
-
-                yield Label("Status: Ready", id="footer_stats")
+                    yield Markdown("No context generated yet. Click 'Generate Context' or press 'g'.", id="markdown_viewer")
 
         yield Footer()
 
@@ -345,7 +328,6 @@ class PuffoCoachApp(App):
                 self._set_input_programmatic("inp_to_date", str(end_d))
 
         elif widget_id in ("sel_global_detail", "sel_health_detail"):
-            # Update health default metrics if default mode is active
             chk_defaults = self.query_one("#chk_health_defaults", Checkbox)
             if chk_defaults.value:
                 self._apply_health_defaults_for_current_detail()
@@ -390,14 +372,12 @@ class PuffoCoachApp(App):
             )
             self._set_checkbox_programmatic("chk_activities_all", all_checked)
 
-
         # Health metrics customization
         elif chk_id == "chk_health_defaults":
             if event.value:
                 self._apply_health_defaults_for_current_detail()
 
         elif chk_id.startswith("chk_metric_"):
-            # User manually changed a metric -> untick 'use defaults'
             self._set_checkbox_programmatic("chk_health_defaults", False)
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
@@ -454,9 +434,6 @@ class PuffoCoachApp(App):
 
         # ── Meals ─────────────────────────────────────────────────────
         meals_enabled = self.query_one("#chk_meals_enabled", Checkbox).value
-        meals_detail_raw = str(self.query_one("#sel_meals_detail", Select).value)
-        meals_detail = global_detail if meals_detail_raw == "inherit" else meals_detail_raw
-
         meals_filter: list[str] = []
         if not self.query_one("#chk_meals_all", Checkbox).value:
             meals_filter = [
@@ -467,7 +444,7 @@ class PuffoCoachApp(App):
         meals_cfg = CategoryConfig(
             enabled=meals_enabled,
             filter=meals_filter,
-            detail_level=meals_detail,
+            detail_level=global_detail,
         )
 
         # ── Activities ────────────────────────────────────────────────
@@ -506,7 +483,6 @@ class PuffoCoachApp(App):
             if custom_metrics:
                 health_filter.extend([m.strip().lower() for m in custom_metrics.split(",") if m.strip()])
         else:
-            # Curated defaults for detail level
             health_filter = list(
                 HEALTH_METRICS_HIGH if health_detail == "high" else HEALTH_METRICS_CORE
             )
@@ -536,7 +512,7 @@ class PuffoCoachApp(App):
             self.notify(str(err), title="Configuration Error", severity="error")
             return
 
-        self._show_loading("Starting context generation…")
+        self._update_progress("Starting context generation…")
         self._run_pipeline_worker(from_date, to_date, configs)
 
     @work(exclusive=True, thread=True)
@@ -555,55 +531,42 @@ class PuffoCoachApp(App):
         except Exception as exc:
             self.call_from_thread(self._on_generation_error, str(exc))
 
-    def _show_loading(self, initial_msg: str) -> None:
-        """Display loading spinner and progress container."""
-        container = self.query_one("#preview_container", VerticalScroll)
-        container.remove_children()
-        container.mount(
-            LoadingIndicator(),
-            Static(initial_msg, id="status_box"),
-        )
-        self.query_one("#footer_stats", Label).update("Status: ⏳ Fetching data…")
-
     def _update_progress(self, msg: str) -> None:
-        """Update progress text in the loading container."""
-        status_widget = self.query("#status_box")
-        if status_widget:
-            status_widget.first().update(f"⏳ {msg}")
+        """Update progress text in the actions bar."""
+        self.query_one("#footer_stats", Label).update(f"Status: {msg}")
 
     def _on_generation_success(
         self, result: PipelineResult, from_date: date, to_date: date
     ) -> None:
-        """Render the generated markdown context in the preview container."""
+        """Update state and markdown preview with generated context."""
         self.last_result = result
-        container = self.query_one("#preview_container", VerticalScroll)
-        container.remove_children()
-        container.mount(Markdown(result.markdown, id="markdown_viewer"))
+        md = self.query_one("#markdown_viewer", Markdown)
+        self.run_worker(md.update(result.markdown))
 
         stats = result.stats
         stats_msg = (
-            f"✓ {from_date} → {to_date} | "
+            f"Status: Done ({from_date} → {to_date} | "
             f"Meals: {stats.meals_count} | "
             f"Activities: {stats.activities_count} | "
             f"Sleep: {stats.sleep_sessions_count} | "
             f"Daily Vitals: {stats.daily_metrics_count} | "
-            f"Chars: {len(result.markdown):,}"
+            f"Chars: {len(result.markdown):,})"
         )
-        self.query_one("#footer_stats", Label).update(f"Status: {stats_msg}")
-        self.notify("Context generated successfully!", severity="information")
+        self.query_one("#footer_stats", Label).update(stats_msg)
+        self.notify("Context generated successfully.", severity="information")
 
     def _on_generation_error(self, error_msg: str) -> None:
-        """Render error card in the preview container."""
-        container = self.query_one("#preview_container", VerticalScroll)
-        container.remove_children()
-        container.mount(
-            Static(
-                f"### ❌ Error Generating Context\n\n```\n{error_msg}\n```\n\n"
-                "Please check your credentials, network connection, or database path in `.env`.",
-                id="error_box",
+        """Display error status and error report."""
+        md = self.query_one("#markdown_viewer", Markdown)
+        self.run_worker(
+            md.update(
+                f"### Error Generating Context\n\n```\n{error_msg}\n```\n\n"
+                "Please check your credentials, network connection, or database path in `.env`."
             )
         )
-        self.query_one("#footer_stats", Label).update("Status: ❌ Error during generation")
+        col = self.query_one("#col_preview", Collapsible)
+        col.collapsed = False
+        self.query_one("#footer_stats", Label).update(f"Status: Error - {error_msg}")
         self.notify("Generation failed. See preview for details.", severity="error")
 
     def action_copy_context(self) -> None:
@@ -615,7 +578,7 @@ class PuffoCoachApp(App):
         text = self.last_result.markdown
         copied = copy_text_to_clipboard(text, app=self)
         if copied:
-            self.notify(f"Copied {len(text):,} characters to clipboard!", severity="information")
+            self.notify(f"Copied {len(text):,} characters to clipboard.", severity="information")
         else:
             self.notify("Unable to access clipboard.", severity="warning")
 

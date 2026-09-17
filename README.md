@@ -2,7 +2,7 @@
 
 <img width="80" src="assets/icon.svg" align="right" alt="Puffo Coach logo">
 
-CLI tool that builds clean, LLM-friendly Markdown context files from personal health ([Zepp](https://www.zepp.com/)), nutrition ([TimeTagger](https://timetagger.app/)), and fitness data ([Strava](https://www.strava.com/)).
+CLI/TUI tool that builds clean, LLM-friendly Markdown context files from personal health ([Zepp](https://www.zepp.com/)), nutrition ([TimeTagger](https://timetagger.app/)), and fitness data ([Strava](https://www.strava.com/)).
 
 > [!NOTE]
 > The data sources and formats reflect a personalized tracking workflow (and are very opinionated):
@@ -74,7 +74,8 @@ uv run puffo-coach-tui
 ```
 
 The TUI provides:
-- **Date Range Presets**: Quick selection for *Today*, *Yesterday*, *Last 7 days*, *This week to date*, *Last week*, *This month to date*, *Last 30 days*, *Last month*, and custom ranges.
+
+- **Date Range Presets**: Quick selection for _Today_, _Yesterday_, _Last 7 days_, _This week to date_, _Last week_, _This month to date_, _Last 30 days_, _Last month_, and custom ranges.
 - **Source & Detail Controls**: Enable/disable Meals, Activities, and Health with global or per-category detail levels (`high`, `medium`, `low`).
 - **Meals Customization**: Filter all meal types or select individual types (`colazione`, `pranzo`, `cena`, `merenda`).
 - **Activities Customization**: Filter all sport types, select common presets (`ride`, `run`, `hike`, `walk`, `swim`, `workout`), or enter custom sport names.
@@ -113,7 +114,6 @@ uv run python -m puffo_coach --from-date 2026-09-01 --to-date 2026-09-07 --meals
 | `-o`                   | Output file or directory (default: CWD)                              |
 
 In CLI mode, both `--from-date` and `--to-date` plus at least one of `--meals`, `--activities`, `--health` must be specified.
-
 
 ### Filtering Examples
 
