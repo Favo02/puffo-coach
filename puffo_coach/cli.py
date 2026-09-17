@@ -14,22 +14,14 @@ from datetime import date, datetime
 from pathlib import Path
 
 from puffo_coach.models import CategoryConfig
-
-# ── Constants ─────────────────────────────────────────────────────────
-
-DETAIL_LEVELS = ("high", "medium", "low")
-
-ALL_MEAL_TYPES = ("colazione", "pranzo", "cena", "merenda")
-
-# Default health metrics per detail level (used when --health has no value).
-HEALTH_METRICS_HIGH = (
-    "resting_hr", "sleep_hrv", "sleep_rhr", "readiness", "steps",
-    "calories", "active_calories", "spo2_night_score", "vo2max",
-    "respiratory_rate", "training_load", "physical_readiness", "mental_readiness",
+from puffo_coach.pipeline import (
+    ALL_MEAL_TYPES,
+    DETAIL_LEVELS,
+    HEALTH_METRICS_CORE,
+    HEALTH_METRICS_HIGH,
+    run_pipeline,
 )
-HEALTH_METRICS_CORE = (
-    "resting_hr", "sleep_hrv", "readiness", "steps", "calories", "spo2_night_score",
-)
+
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -229,59 +221,9 @@ def main() -> None:
     to_date: date = args.to_date
     configs = build_category_configs(args)
 
-    meals: list = []
-    activities: list = []
-    health = None
+    result = run_pipeline(from_date, to_date, configs, progress_callback=print)
+    md = result.markdown
 
-    # ── Fetch meals from TimeTagger ───────────────────────────────────
-    if configs["meals"].enabled:
-        from puffo_coach.fetchers.timetagger import TimeTaggerFetcher
-
-        cfg = configs["meals"]
-        print(f"⏳ Fetching meals from TimeTagger ({from_date} → {to_date})…")
-        meals = TimeTaggerFetcher().fetch(from_date, to_date, meal_types=cfg.filter)
-        print(f"   ✓ {len(meals)} meal(s) found.")
-
-    # ── Fetch activities from Strava ──────────────────────────────────
-    if configs["activities"].enabled:
-        from puffo_coach.fetchers.strava import StravaFetcher
-
-        cfg = configs["activities"]
-        print(f"⏳ Fetching activities from Strava ({from_date} → {to_date})…")
-        activities = StravaFetcher().fetch(
-            from_date, to_date,
-            detail_level=cfg.detail_level,
-            sport_types=cfg.filter,
-        )
-        print(f"   ✓ {len(activities)} activity/ies found.")
-
-    # ── Fetch health vitals from ZeppBridge ───────────────────────────
-    if configs["health"].enabled:
-        from puffo_coach.fetchers.zepp_sqlite import ZeppSqliteReader
-
-        cfg = configs["health"]
-        print(f"⏳ Fetching health data from ZeppBridge ({from_date} → {to_date})…")
-        health = ZeppSqliteReader().fetch(
-            from_date, to_date,
-            detail_level=cfg.detail_level,
-            metrics=cfg.filter,
-        )
-        print(
-            f"   ✓ {len(health.sleep)} sleep session(s), "
-            f"{len(health.daily)} daily metric row(s), "
-            f"{len(health.hr_hourly)} hourly HR record(s)."
-        )
-
-    # ── Format ────────────────────────────────────────────────────────
-    from puffo_coach.formatter import MarkdownFormatter
-
-    md = MarkdownFormatter(configs).render(
-        meals=meals,
-        activities=activities,
-        health=health,
-        from_date=from_date,
-        to_date=to_date,
-    )
 
     # ── Write output ──────────────────────────────────────────────────
     default_name = f"context_from_{from_date}_to_{to_date}.md"
