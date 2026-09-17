@@ -72,21 +72,27 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     --activities run,hike --activities-detail high""",
     )
 
+    # ── Interactive TUI ───────────────────────────────────────────────
+    parser.add_argument(
+        "--tui",
+        action="store_true",
+        help="Launch interactive terminal user interface (TUI).",
+    )
+
     # ── Date range ────────────────────────────────────────────────────
     parser.add_argument(
         "--from-date",
-        required=True,
         type=_parse_date,
         metavar="YYYY-MM-DD",
         help="Start of the date range (inclusive).",
     )
     parser.add_argument(
         "--to-date",
-        required=True,
         type=_parse_date,
         metavar="YYYY-MM-DD",
         help="End of the date range (inclusive).",
     )
+
 
     # ── Category flags (optional comma-separated filter) ──────────────
     parser.add_argument(
@@ -160,6 +166,12 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     args = parser.parse_args(argv)
 
     # ── Validation ────────────────────────────────────────────────────
+    if args.tui:
+        return args
+
+    if not args.from_date or not args.to_date:
+        parser.error("Both --from-date and --to-date are required for CLI mode (or run with --tui).")
+
     if args.from_date > args.to_date:
         parser.error("--from-date must be before or equal to --to-date.")
 
@@ -216,10 +228,21 @@ def build_category_configs(args: argparse.Namespace) -> dict[str, CategoryConfig
 
 def main() -> None:
     """Entry point: parse args, fetch data, format, write output."""
+    if len(sys.argv) == 1:
+        from puffo_coach.tui import main as tui_main
+        tui_main()
+        return
+
     args = parse_args()
+    if args.tui:
+        from puffo_coach.tui import main as tui_main
+        tui_main()
+        return
+
     from_date: date = args.from_date
     to_date: date = args.to_date
     configs = build_category_configs(args)
+
 
     result = run_pipeline(from_date, to_date, configs, progress_callback=print)
     md = result.markdown

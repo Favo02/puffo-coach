@@ -16,3 +16,5 @@ dependencies = [
 
 [project.scripts]
 puffo-coach = "puffo_coach.cli:main"
+puffo-coach-tui = "puffo_coach.tui:main"
+
