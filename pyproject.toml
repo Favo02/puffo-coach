@@ -1,7 +1,11 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
 [project]
-name = "health-context"
+name = "puffo-coach"
 version = "0.1.0"
-description = "Build LLM-friendly Markdown context from personal data."
+description = "Puffo Coach: Build LLM-friendly Markdown context from personal data."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -10,4 +14,4 @@ dependencies = [
 ]
 
 [project.scripts]
-health-context = "health_context:main"
+puffo-coach = "puffo_coach.cli:main"
