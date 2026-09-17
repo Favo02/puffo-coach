@@ -10,6 +10,22 @@ from dataclasses import dataclass, field
 from datetime import date, time
 
 
+# ── Category Configuration ────────────────────────────────────────────
+
+@dataclass
+class CategoryConfig:
+    """Per-category filter and detail level settings.
+
+    Attributes:
+        enabled: Whether this category is active.
+        filter: Types/metrics to include. Empty list means all (no filter).
+        detail_level: Compression level for this category (high/medium/low).
+    """
+    enabled: bool = False
+    filter: list[str] = field(default_factory=list)
+    detail_level: str = "medium"
+
+
 # ── Meals (TimeTagger) ────────────────────────────────────────────────
 
 @dataclass
