@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" width="512" height="512">
+    <!-- Solid Smurf Blue App Background -->
+    <rect width="200" height="200" rx="45" fill="#4C9EEB" />
+
+    <!-- Scaled down and centered group to fit perfectly in the background -->
+    <g transform="translate(20, 20) scale(0.8)">
+        <!-- Tilted Group (Clipboard + Hat) -->
+        <g transform="rotate(-8 100 100)">
+
+            <!-- Clipboard Base -->
+            <rect x="50" y="70" width="100" height="110" rx="8" fill="#F8FAFC" stroke="#1E293B" stroke-width="4"/>
+
+            <!-- Metal Clip -->
+            <path d="M 80 70 C 80 55, 120 55, 120 70" fill="#CBD5E1" stroke="#1E293B" stroke-width="4" stroke-linejoin="round"/>
+            <rect x="75" y="65" width="50" height="10" rx="3" fill="#94A3B8" stroke="#1E293B" stroke-width="4"/>
+            <circle cx="100" cy="70" r="2.5" fill="#1E293B"/>
+
+            <!-- Paper -->
+            <rect x="60" y="80" width="80" height="90" rx="2" fill="#FFFFFF" stroke="#94A3B8" stroke-width="2"/>
+
+            <!-- Abstract Health Data / Subtle Lines -->
+            <path d="M 68 125 L 68 110 L 80 95 L 95 105 L 115 85 L 132 98 L 132 125 Z" fill="#E2E8F0" opacity="0.5"/>
+            <path d="M 68 110 L 80 95 L 95 105 L 115 85 L 132 98" fill="none" stroke="#64748B" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="68" y1="135" x2="132" y2="135" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+            <line x1="68" y1="148" x2="110" y2="148" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+            <line x1="68" y1="161" x2="125" y2="161" stroke="#CBD5E1" stroke-width="4" stroke-linecap="round"/>
+
+            <!-- Soft shadow cast by the hat onto the clipboard -->
+            <path d="M 55 72 Q 100 88 145 72 L 145 82 Q 100 98 55 82 Z" fill="#1E293B" opacity="0.12" />
+
+            <!-- Proper Smurf Hat (Classic Phrygian Cap Shape) -->
+            <path d="M 55 72
+                     Q 100 88 145 72
+                     C 145 60 130 55 120 50
+                     C 145 55 160 55 155 35
+                     C 145 15 110 5 80 25
+                     C 50 45 50 60 55 72 Z"
+                  fill="#FFFFFF" stroke="#1E293B" stroke-width="4" stroke-linejoin="round"/>
+
+            <!-- Hat Crease/Fold Line (Gives the hat its floppy 3D volume) -->
+            <path d="M 120 50 C 110 45 100 45 90 52" fill="none" stroke="#1E293B" stroke-width="4" stroke-linecap="round"/>
+
+        </g>
+    </g>
+</svg>
