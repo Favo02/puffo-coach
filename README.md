@@ -61,7 +61,27 @@ The database is accessed strictly in read-only mode (`?mode=ro`).
 
 ## Usage
 
-Run via `uv`:
+### Interactive TUI
+
+Launch the interactive Terminal User Interface (TUI) by running `puffo-coach` without arguments, with `--tui`, or via `puffo-coach-tui`:
+
+```bash
+uv run puffo-coach
+# or
+uv run puffo-coach --tui
+# or
+uv run puffo-coach-tui
+```
+
+The TUI provides:
+- **Date Range Presets**: Quick selection for *Today*, *Yesterday*, *Last 7 days*, *This week to date*, *Last week*, *This month to date*, *Last 30 days*, *Last month*, and custom ranges.
+- **Source & Detail Controls**: Enable/disable Meals, Activities, and Health with global or per-category detail levels (`high`, `medium`, `low`).
+- **Meals Customization**: Filter all meal types or select individual types (`colazione`, `pranzo`, `cena`, `merenda`).
+- **Activities Customization**: Filter all sport types, select common presets (`ride`, `run`, `hike`, `walk`, `swim`, `workout`), or enter custom sport names.
+- **Vitals Customization**: Default metrics paired with detail level, toggles to include/exclude each metric, and custom metric inputs.
+- **Preview & Export**: Rendered Markdown viewer with syntax highlighting, clipboard copy (`c` or button), and file save (`s` or button).
+
+### CLI Mode
 
 ```bash
 uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
@@ -80,8 +100,9 @@ uv run python -m puffo_coach --from-date 2026-09-01 --to-date 2026-09-07 --meals
 
 | Argument               | Description                                                          |
 | ---------------------- | -------------------------------------------------------------------- |
-| `--from-date`          | Start date, YYYY-MM-DD (required)                                    |
-| `--to-date`            | End date, YYYY-MM-DD (required)                                      |
+| `--tui`                | Launch interactive terminal user interface (TUI)                     |
+| `--from-date`          | Start date, YYYY-MM-DD (required in CLI mode)                        |
+| `--to-date`            | End date, YYYY-MM-DD (required in CLI mode)                          |
 | `--meals [TYPES]`      | Fetch meals. Optionally filter: `colazione,pranzo,cena,merenda`      |
 | `--activities [TYPES]` | Fetch workouts. Optionally filter by sport type: `ride,run,hike,...` |
 | `--health [METRICS]`   | Fetch vitals. Optionally list metrics: `resting_hr,sleep_hrv,...`    |
@@ -91,7 +112,8 @@ uv run python -m puffo_coach --from-date 2026-09-01 --to-date 2026-09-07 --meals
 | `--health-detail`      | Override detail level for health vitals                              |
 | `-o`                   | Output file or directory (default: CWD)                              |
 
-At least one of `--meals`, `--activities`, `--health` must be specified.
+In CLI mode, both `--from-date` and `--to-date` plus at least one of `--meals`, `--activities`, `--health` must be specified.
+
 
 ### Filtering Examples
 
