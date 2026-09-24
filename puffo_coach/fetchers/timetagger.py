@@ -13,12 +13,30 @@ from puffo_coach.models import Meal
 from puffo_coach.fetchers.base import BaseFetcher
 
 MEAL_TAGS = ('colazione', 'pranzo', 'cena', 'merenda')
-MEAL_PATTERN = re.compile(
-    r'#(' + '|'.join(MEAL_TAGS) + r')'
-    r'.*?'
-    r'\[([^\]]+)\]',
+_MEAL_TAG_RE = re.compile(
+    r'#(' + '|'.join(MEAL_TAGS) + r')\b',
     re.IGNORECASE,
 )
+
+
+def _parse_meal_food(ds: str, tag_end: int) -> str:
+    """Extract food description from brackets after a meal tag.
+
+    The bracket content is only associated with the meal tag if no other
+    ``#tag`` appears between the meal tag and the opening ``[``.
+
+    Returns:
+        Bracket contents if valid, otherwise ``'UNKNOWN'``.
+    """
+    after = ds[tag_end:]
+    next_hash = after.find('#')
+    bracket_start = after.find('[')
+
+    if bracket_start != -1 and (next_hash == -1 or bracket_start < next_hash):
+        bracket_end = after.find(']', bracket_start)
+        if bracket_end != -1:
+            return after[bracket_start + 1:bracket_end].strip()
+    return "UNKNOWN"
 
 
 class TimeTaggerFetcher(BaseFetcher):
@@ -32,16 +50,17 @@ class TimeTaggerFetcher(BaseFetcher):
         self,
         from_date: date,
         to_date: date,
-        meal_types: list[str] | None = None,
         **kwargs: Any,
     ) -> list[Meal]:
         """Fetch meals from TimeTagger for the given date range.
 
+        All records containing a meal tag are returned. If a record has no
+        bracketed food description (or another ``#tag`` appears before the
+        bracket), the food is set to ``'UNKNOWN'``.
+
         Args:
             from_date: Start of range (inclusive).
             to_date: End of range (inclusive).
-            meal_types: Meal types to include (e.g., ['colazione', 'pranzo']).
-                        Empty list or None means all types.
 
         Returns:
             A list of Meal objects sorted by date and time.
@@ -58,34 +77,29 @@ class TimeTaggerFetcher(BaseFetcher):
         except requests.RequestException as e:
             raise RuntimeError(f"TimeTagger fetch failed: {e}") from e
 
-        # Normalize filter to a set for fast lookup (empty = all).
-        type_filter: set[str] = {t.lower() for t in meal_types} if meal_types else set()
-
         data = response.json()
         meals: list[Meal] = []
 
         for record in data.get("records", []):
             ds = record.get("ds", "")
-            match = MEAL_PATTERN.search(ds)
-            if match:
-                meal_type = match.group(1).lower()
+            match = _MEAL_TAG_RE.search(ds)
+            if not match:
+                continue
 
-                # Skip if a filter is active and this type isn't included.
-                if type_filter and meal_type not in type_filter:
-                    continue
+            meal_type = match.group(1).lower()
+            food = _parse_meal_food(ds, match.end())
 
-                record_t1 = record.get("t1")
-                if record_t1 is None:
-                    continue
+            record_t1 = record.get("t1")
+            if record_t1 is None:
+                continue
 
-                dt = datetime.fromtimestamp(record_t1)
-                meal = Meal(
-                    date=dt.date(),
-                    time=dt.time(),
-                    meal_type=meal_type,
-                    food=match.group(2).strip(),
-                )
-                meals.append(meal)
+            dt = datetime.fromtimestamp(record_t1)
+            meals.append(Meal(
+                date=dt.date(),
+                time=dt.time(),
+                meal_type=meal_type,
+                food=food,
+            ))
 
         meals.sort(key=lambda m: (m.date, m.time))
         return meals
