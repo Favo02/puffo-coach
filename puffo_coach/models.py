@@ -79,6 +79,8 @@ class HrBucket:
     min_hr: int
     max_hr: int
     avg_hrv: float | None = None
+    min_hrv: float | None = None
+    max_hrv: float | None = None
 
 
 @dataclass

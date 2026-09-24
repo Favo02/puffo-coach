@@ -113,6 +113,10 @@ class MarkdownFormatter:
                     ]
                     if b.avg_hrv is not None:
                         b_attrs.append(f'avg_hrv="{self._fmt_val(b.avg_hrv)}"')
+                    if b.min_hrv is not None:
+                        b_attrs.append(f'min_hrv="{self._fmt_val(b.min_hrv)}"')
+                    if b.max_hrv is not None:
+                        b_attrs.append(f'max_hrv="{self._fmt_val(b.max_hrv)}"')
                     parts.append(f"    <bucket {' '.join(b_attrs)}/>")
                 parts.append("  </hr_buckets>")
                 parts.append("</day>")
@@ -319,24 +323,16 @@ class MarkdownFormatter:
 
     @staticmethod
     def _pivot_daily_metrics(rows: list[DailyMetricRow]) -> dict[str, dict[str, float]]:
-        metric_map = {
-            "resting_hr": "resting_hr",
-            "readiness": "readiness",
-            "steps": "steps",
-            "calories": "calories",
-            "active_calories": "active_cal",
-            "vo2max": "vo2max",
-            "training_load": "training_load",
-            "physical_readiness": "physical_readiness",
-            "mental_readiness": "mental_readiness",
-            "stress": "stress",
-            "pai_total": "pai_total",
-            "hrv_readiness": "hrv_readiness",
-            "rhr_readiness": "rhr_readiness",
+        allowed = {
+            "resting_hr",
+            "steps",
+            "active_minutes",
+            "training_load",
+            "vo2max",
+            "pai_total",
         }
-
         result: dict[str, dict[str, float]] = collections.defaultdict(dict)
         for r in rows:
-            mapped = metric_map.get(r.metric, r.metric)
-            result[r.date][mapped] = r.value
+            if r.metric in allowed:
+                result[r.date][r.metric] = r.value
         return dict(result)

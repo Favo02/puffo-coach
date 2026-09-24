@@ -19,6 +19,16 @@ from puffo_coach.models import (
 # Metrics attached to sleep sessions instead of daily vitals.
 SLEEP_VITALS = ("respiratory_rate", "sleep_hrv", "sleep_rhr", "spo2_night_score")
 
+# Curated daily metrics to include in daily vitals.
+DAY_METRICS = (
+    "resting_hr",
+    "steps",
+    "active_minutes",
+    "training_load",
+    "vo2max",
+    "pai_total",
+)
+
 
 class ZeppSqliteReader(BaseFetcher):
     """Fetches health data from a local ZeppBridge SQLite database."""
@@ -108,17 +118,17 @@ class ZeppSqliteReader(BaseFetcher):
     def _query_daily(
         self, conn: sqlite3.Connection, from_date: date, to_date: date
     ) -> list[DailyMetricRow]:
-        """Query all daily metrics, excluding sleep vitals (attached to sleep)."""
-        placeholders = ",".join(["?"] * len(SLEEP_VITALS))
+        """Query curated daily metrics: resting_hr, steps, active_minutes, training_load, vo2max, pai_total."""
+        placeholders = ",".join(["?"] * len(DAY_METRICS))
         query = f"""
             SELECT date, metric, value, unit
               FROM daily_metrics
              WHERE date BETWEEN ? AND ?
-               AND metric NOT IN ({placeholders})
+               AND metric IN ({placeholders})
              GROUP BY date, metric
              ORDER BY date, metric;
         """
-        params: list[Any] = [str(from_date), str(to_date)] + list(SLEEP_VITALS)
+        params: list[Any] = [str(from_date), str(to_date)] + list(DAY_METRICS)
         cur = conn.execute(query, params)
 
         return [
@@ -134,14 +144,16 @@ class ZeppSqliteReader(BaseFetcher):
     def _query_hr_buckets(
         self, conn: sqlite3.Connection, from_date: date, to_date: date, bucket_hours: int
     ) -> list[HrBucket]:
-        """Aggregate heart rate and HRV RMSSD into time buckets."""
+        """Aggregate heart rate (min/max/avg) and HRV RMSSD (min/max/avg) into time buckets."""
         query = """
             SELECT date(timestamp) AS day,
                    (CAST(strftime('%H', timestamp) AS INTEGER) / ?) AS bucket_idx,
                    ROUND(AVG(CASE WHEN metric = 'heart_rate' THEN value END)) AS avg_hr,
                    MIN(CASE WHEN metric = 'heart_rate' THEN CAST(value AS INTEGER) END) AS min_hr,
                    MAX(CASE WHEN metric = 'heart_rate' THEN CAST(value AS INTEGER) END) AS max_hr,
-                   ROUND(AVG(CASE WHEN metric = 'hrv_rmssd' THEN value END), 1) AS avg_hrv
+                   ROUND(AVG(CASE WHEN metric = 'hrv_rmssd' THEN value END), 1) AS avg_hrv,
+                   ROUND(MIN(CASE WHEN metric = 'hrv_rmssd' THEN value END), 1) AS min_hrv,
+                   ROUND(MAX(CASE WHEN metric = 'hrv_rmssd' THEN value END), 1) AS max_hrv
               FROM metric_samples
              WHERE metric IN ('heart_rate', 'hrv_rmssd')
                AND date(timestamp) BETWEEN ? AND ?
@@ -159,6 +171,8 @@ class ZeppSqliteReader(BaseFetcher):
                 min_hr=int(row["min_hr"]) if row["min_hr"] is not None else 0,
                 max_hr=int(row["max_hr"]) if row["max_hr"] is not None else 0,
                 avg_hrv=float(row["avg_hrv"]) if row["avg_hrv"] is not None else None,
+                min_hrv=float(row["min_hrv"]) if row["min_hrv"] is not None else None,
+                max_hrv=float(row["max_hrv"]) if row["max_hrv"] is not None else None,
             )
             for row in cur
         ]
