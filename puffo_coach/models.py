@@ -18,12 +18,14 @@ class CategoryConfig:
 
     Attributes:
         enabled: Whether this category is active.
-        filter: Types/metrics to include. Empty list means all (no filter).
-        detail_level: Compression level for this category (high/medium/low).
+        filter: Types to include. Empty list means all (no filter).
+                Used by activities for sport type filtering.
+        detail_level: For health: hours per HR/HRV bucket (1–24, must divide 24).
+                      Ignored by meals and activities.
     """
     enabled: bool = False
     filter: list[str] = field(default_factory=list)
-    detail_level: str = "medium"
+    detail_level: int = 6
 
 
 # ── Meals (TimeTagger) ────────────────────────────────────────────────
@@ -33,17 +35,10 @@ class Meal:
     date: date
     time: time
     meal_type: str       # colazione | pranzo | cena | merenda
-    food: str            # raw string from brackets, unparsed
+    food: str            # raw string from brackets, or UNKNOWN
 
 
 # ── Sleep (ZeppBridge) ────────────────────────────────────────────────
-
-@dataclass
-class SleepStage:
-    stage: str           # deep | light | rem | awake
-    start_time: str      # ISO 8601
-    end_time: str        # ISO 8601
-
 
 @dataclass
 class SleepSession:
@@ -57,7 +52,10 @@ class SleepSession:
     rem_min: int
     awake_min: int
     wake_count: int | None
-    stages: list[SleepStage] = field(default_factory=list)
+    resp_rate: float | None = None
+    sleep_hrv: float | None = None
+    sleep_rhr: float | None = None
+    spo2_night: float | None = None
 
 
 # ── Health Vitals (ZeppBridge) ────────────────────────────────────────
@@ -72,13 +70,15 @@ class DailyMetricRow:
 
 
 @dataclass
-class HrHourly:
-    """Hourly heart-rate aggregate for one hour of one day."""
+class HrBucket:
+    """Heart-rate and HRV aggregate for a time bucket within a day."""
     day: str             # YYYY-MM-DD
-    hour: int            # 0–23
+    start_hour: int      # 0–23
+    end_hour: int        # 1–24 (exclusive)
     avg_hr: int
     min_hr: int
     max_hr: int
+    avg_hrv: float | None = None
 
 
 @dataclass
@@ -86,10 +86,21 @@ class HealthBundle:
     """Container for all ZeppBridge health data."""
     sleep: list[SleepSession]
     daily: list[DailyMetricRow]
-    hr_hourly: list[HrHourly]
+    hr_buckets: list[HrBucket]
 
 
 # ── Activities (Strava) ──────────────────────────────────────────────
+
+@dataclass
+class HrChunk:
+    """Heart rate stats for a time chunk of a non-GPS activity."""
+    chunk: int           # 1-indexed
+    start_time: str      # M:SS or MM:SS
+    end_time: str        # M:SS or MM:SS
+    avg_hr: int
+    min_hr: int
+    max_hr: int
+
 
 @dataclass
 class ActivitySplit:
@@ -118,9 +129,11 @@ class Activity:
     max_speed: float | None             # m/s
     average_heartrate: float | None     # bpm
     max_heartrate: float | None         # bpm
+    min_heartrate: float | None         # bpm (from stream, non-GPS only)
     average_cadence: float | None
-    suffer_score: int | None
-    calories: float | None
+    relative_effort: int | None         # Strava's suffer_score
     description: str | None
     gear_name: str | None
+    has_gps: bool = False
     splits_metric: list[ActivitySplit] = field(default_factory=list)
+    hr_chunks: list[HrChunk] = field(default_factory=list)
