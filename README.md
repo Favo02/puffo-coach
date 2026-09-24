@@ -5,9 +5,9 @@
 CLI/TUI tool that builds clean, LLM-friendly Markdown context files from personal health ([Zepp](https://www.zepp.com/)), nutrition ([TimeTagger](https://timetagger.app/)), and fitness data ([Strava](https://www.strava.com/)).
 
 > [!NOTE]
-> The data sources and formats reflect a personalized tracking workflow (and are very opinionated):
+> Data sources and formatting reflect a personalized tracking workflow (and are very opinionated):
 >
-> - **Meals**: Tracked in TimeTagger using custom tag and bracket formatting (`#colazione [food items]`).
+> - **Meals**: Tracked in TimeTagger using meal tags (`#colazione`, `#pranzo`, `#cena`, `#merenda`) and bracketed food descriptions (`[food items]`).
 > - **Workouts**: Recorded on-device and synced directly to Strava.
 > - **Vitals & Sleep**: Recorded by a Zepp-compatible wearable and exported to a local SQLite database via ZeppBridge.
 
@@ -15,7 +15,7 @@ CLI/TUI tool that builds clean, LLM-friendly Markdown context files from persona
 
 ```bash
 uv sync
-cp .env.example .env   # then fill in your credentials
+cp .env.example .env   # fill in credentials
 ```
 
 ### TimeTagger
@@ -28,7 +28,7 @@ cp .env.example .env   # then fill in your credentials
    TIMETAGGER_TOKEN=<your-token>
    ```
 
-Meals are parsed by searching for the tags `#colazione`, `#pranzo`, `#cena`, or `#merenda` followed by bracketed food items `[...]`. Any text between the tag and brackets is ignored.
+Meals are parsed by searching for the tags `#colazione`, `#pranzo`, `#cena`, or `#merenda`. If followed immediately by bracketed food items `[...]`, the bracket content is extracted. If no brackets exist or if another `#tag` appears before the bracket (e.g. `#pranzo #friends [Mario, Luigi]`), the food description is recorded as `UNKNOWN`.
 
 _Example_: `#colazione al bar [brioche, cappuccio]` is extracted as meal type `colazione` with food items `brioche, cappuccio`.
 
@@ -75,94 +75,178 @@ uv run puffo-coach-tui
 
 The TUI provides:
 
-- **Date Range Presets**: Quick selection for _Today_, _Yesterday_, _Last 7 days_, _This week to date_, _Last week_, _This month to date_, _Last 30 days_, _Last month_, and custom ranges.
-- **Source & Detail Controls**: Enable/disable Meals, Activities, and Health with global or per-category detail levels (`high`, `medium`, `low`).
-- **Meals Customization**: Filter all meal types or select individual types (`colazione`, `pranzo`, `cena`, `merenda`).
-- **Activities Customization**: Filter all sport types, select common presets (`ride`, `run`, `hike`, `walk`, `swim`, `workout`), or enter custom sport names.
-- **Vitals Customization**: Default metrics paired with detail level, toggles to include/exclude each metric, and custom metric inputs.
-- **Preview & Export**: Rendered Markdown viewer with syntax highlighting, clipboard copy (`c` or button), and file save (`s` or button).
+- **High-Visibility Status Bar**: Prominent status indicator showing state, progress, and generation summaries.
+- **Date Range Controls**: 3-column row with quick presets (_Today_, _Yesterday_, _Last 7 days_, _This week to date_, _Last week_, _This month to date_, _Last 30 days_, _Last month_, _Custom_) and editable From/To dates.
+- **Meals Toggle**: Single checkbox to include all tracked meals.
+- **Activities Selection**: Multi-select grid with the 7 primary sports (`Soccer`, `Volleyball`, `Beach Volleyball`, `Workout`, `Hike`, `Run`, `Ride`) and custom sport input.
+- **Health Detail Selection**: Direct selection of heart rate / HRV aggregation window (`1h`, `2h`, `3h`, `4h`, `6h`, `8h`, `12h`, `24h` per bucket).
+- **Keyboard Shortcuts**: `g` (Generate Context), `c` (Copy to Clipboard), `s` (Save to File), `d` (Toggle Dark Mode), `q` (Quit).
 
 ### CLI Mode
 
 ```bash
 uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals --activities --health \
-  --detail-level medium \
+  --health-detail 6 \
   -o ./output/
-```
-
-Alternatively, invoke as a Python module:
-
-```bash
-uv run python -m puffo_coach --from-date 2026-09-01 --to-date 2026-09-07 --meals --activities --health
 ```
 
 ### Arguments
 
-| Argument               | Description                                                          |
-| ---------------------- | -------------------------------------------------------------------- |
-| `--tui`                | Launch interactive terminal user interface (TUI)                     |
-| `--from-date`          | Start date, YYYY-MM-DD (required in CLI mode)                        |
-| `--to-date`            | End date, YYYY-MM-DD (required in CLI mode)                          |
-| `--meals [TYPES]`      | Fetch meals. Optionally filter: `colazione,pranzo,cena,merenda`      |
-| `--activities [TYPES]` | Fetch workouts. Optionally filter by sport type: `ride,run,hike,...` |
-| `--health [METRICS]`   | Fetch vitals. Optionally list metrics: `resting_hr,sleep_hrv,...`    |
-| `--detail-level`       | Global compression: `high`, `medium` (default), `low`                |
-| `--meals-detail`       | Override detail level for meals                                      |
-| `--activities-detail`  | Override detail level for activities                                 |
-| `--health-detail`      | Override detail level for health vitals                              |
-| `-o`                   | Output file or directory (default: CWD)                              |
+| Argument                | Description                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------- |
+| `--tui`                 | Launch interactive terminal user interface (TUI)                                   |
+| `--from-date`           | Start date, YYYY-MM-DD (required in CLI mode)                                      |
+| `--to-date`             | End date, YYYY-MM-DD (required in CLI mode)                                        |
+| `--meals`               | Fetch all tracked meals from TimeTagger                                            |
+| `--activities [TYPES]`  | Fetch activities from Strava. Optionally filter: `ride,run,soccer,...`             |
+| `--health`              | Fetch health vitals and sleep from ZeppBridge                                      |
+| `--health-detail HOURS` | HR/HRV bucket aggregation window in hours: `1, 2, 3, 4, 6, 8, 12, 24` (default: 6) |
+| `-o`, `--output`        | Output file path or directory (default: CWD)                                       |
 
 In CLI mode, both `--from-date` and `--to-date` plus at least one of `--meals`, `--activities`, `--health` must be specified.
 
-### Filtering Examples
+### CLI Examples
 
 ```bash
-# Everything, medium detail
+# Everything, default 6-hour health buckets
 uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
   --meals --activities --health
 
-# Only breakfast and dinner
+# Meals and runs/hikes, hourly health buckets
 uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
-  --meals colazione,cena
+  --meals --activities run,hike --health --health-detail 1
 
-# Only rides at high detail, health at low detail with 3 core metrics
+# Only rides
 uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
-  --activities ride --activities-detail high \
-  --health resting_hr,sleep_hrv,readiness --health-detail low
-
-# Runs and hikes only
-uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
-  --activities run,hike --activities-detail high
+  --activities ride
 ```
 
-### Available Health Metrics
+## Data Handling & Formatting
 
-Default set (used when `--health` is passed without a value):
+### Meals
 
-| Detail     | Metrics                                                                                                                                                                                                  |
-| ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| high       | `resting_hr`, `sleep_hrv`, `sleep_rhr`, `readiness`, `steps`, `calories`, `active_calories`, `spo2_night_score`, `vo2max`, `respiratory_rate`, `training_load`, `physical_readiness`, `mental_readiness` |
-| medium/low | `resting_hr`, `sleep_hrv`, `readiness`, `steps`, `calories`, `spo2_night_score`                                                                                                                          |
+- All meals tagged with `#colazione`, `#pranzo`, `#cena`, or `#merenda` are included.
+- Food descriptions in brackets following the tag are extracted (e.g. `#colazione [yogurt, caffè]` -> `yogurt, caffè`).
+- If no brackets exist or an intermediate tag is present (e.g. `#pranzo #friends [Mario]`), description defaults to `UNKNOWN`.
 
-You can override with any metric available in ZeppBridge's `daily_metrics` table, e.g. `--health stress,pai_total,vo2max`.
+### Activities
 
-Sleep data is always included when `--health` is active.
+- **Always Full Detail**: Activities never use lossy compression levels.
+- **No Calories**: Calorie estimates are omitted.
+- **Relative Effort**: Strava's `suffer_score` is reported as `relative_effort`.
+- **Primary Sport Curated Attributes**:
+  - `Ride`, `Run`, `Hike`: `distance_km`, `elevation_m`, `avg_hr`, `max_hr`, `avg_cadence`, `relative_effort`, and `<splits>`. For activities >50 km, all kilometers are grouped into 5 km chunks.
+  - `Soccer`: `distance_km` (if GPS tracked), `avg_hr`, `max_hr`, `min_hr`, `relative_effort`. No elevation.
+  - `Volleyball`, `Beach Volleyball`: `avg_hr`, `max_hr`, `min_hr`, `relative_effort`. No elevation or distance.
+  - `Workout`: `distance_km` (if GPS tracked), `avg_hr`, `max_hr`, `min_hr`, `relative_effort`. No elevation.
+- **Heart Rate Chunks vs Splits**:
+  - Activities **with** Strava API-native km splits: use native splits with heart rate data included (`avg_hr` per split, or 5 km grouped splits for >50 km).
+  - Activities **without** Strava API-native km splits: split into 10 equal-duration time chunks with `start`, `end`, `avg_hr`, `min_hr`, and `max_hr`.
 
-### Activity Type Matching
+### Sleep
 
-Activity types use **case-insensitive substring matching** against Strava's `sport_type`:
+- Rendered as a single `<night .../>` row per sleep session.
+- Sleep phase/stage transitions are omitted.
+- Row attributes: `date`, `score`, `total_min`, `deep`, `light`, `rem`, `awake`, `wakes`, `start`, `end`.
+- Sleep-specific vitals moved from daily vitals to the sleep row: `resp_rate`, `sleep_hrv`, `sleep_rhr`, `spo2_night`.
 
-- `ride` matches `Ride`, `VirtualRide`
-- `run` matches `Run`, `TrailRun`, `VirtualRun`
-- `soccer` matches `Soccer`
+### Health Vitals & Compression
 
-## Design Choices
+- **Only vitals have a detail level**: configured via `--health-detail N` (hours dividing 24: `1, 2, 3, 4, 6, 8, 12, 24`).
+- **Curated Day Metrics**: `<day date="..." .../>` includes only `resting_hr`, `steps`, `active_minutes`, `training_load`, `vo2max`, and `pai_total`.
+- **Day HR/HRV Chunks**: sub-daily samples are aggregated into `<hr_buckets>` with `<bucket start="..." end="..." avg_hr="..." min_hr="..." max_hr="..." avg_hrv="..." min_hrv="..." max_hrv="..."/>`.
 
-- **Output format**: XML tags inside Markdown. Token-efficient, unambiguous for LLMs, and easily readable by humans.
-- **Meals are always fully listed**: Given the low daily volume of meals, full fidelity is preserved across all detail levels.
-- **Vitals compression**: Heart rate produces 1,440 samples/day; even at `high` detail it is aggregated hourly, while `low` detail provides multi-day statistical summaries.
-- **Strava for workouts**: Activity data is sourced exclusively from Strava to leverage its trusted processing algorithms and native per-kilometer split calculations.
-- **Curated health metrics**: Only actionable, reliable metrics are included by default (unreliable estimates like watch stress are excluded by default, but can be explicitly requested).
-- **Lazy validation**: Environment variables for unused data sources are not required; running `--meals` alone will not fail if Strava credentials are unset.
-- **Per-category detail**: Each data category (meals, activities, health) can have its own compression level, falling back to the global `--detail-level`.
+---
+
+## ZeppDB Metrics Reference
+
+Full inventory of metrics present in the local ZeppBridge SQLite database (`zepp.db`):
+
+### `metric_samples` Table (Sub-Daily / Timestamped Samples)
+
+| Metric           | Granularity   | Average Frequency  | Description                                        |
+| ---------------- | ------------- | ------------------ | -------------------------------------------------- |
+| `heart_rate`     | ~1 minute     | ~1,420 samples/day | Continuous heart rate measurement (bpm)            |
+| `hrv_rmssd`      | ~1 minute     | ~376 samples/day   | Root mean square of successive RR differences (ms) |
+| `stress`         | ~5 minutes    | ~210 samples/day   | Stress score (0-100)                               |
+| `spo2`           | ~5-15 minutes | ~143 samples/day   | Blood oxygen saturation percentage (%)             |
+| `hrv`            | ~2-3x / night | ~3 samples/day     | Nightly HRV summary samples                        |
+| `spo2_apnea_low` | ~1x / night   | ~3 samples/day     | Lowest SpO₂ recorded during sleep                  |
+| `weight`         | manual input  | As recorded        | Body weight (kg)                                   |
+| `height`         | manual input  | As recorded        | Body height (cm)                                   |
+| `bmi`            | manual input  | As recorded        | Body mass index (kg/m²)                            |
+
+### `daily_metrics` Table (Daily Aggregates)
+
+All metrics in this table have **daily** granularity (one record per day):
+
+| Metric                     | Category         | Description                                                         |
+| -------------------------- | ---------------- | ------------------------------------------------------------------- |
+| `sleep_hrv`                | Sleep / Recovery | Average HRV during sleep (ms) _(moved to sleep row)_                |
+| `sleep_rhr`                | Sleep / Recovery | Resting heart rate during sleep (bpm) _(moved to sleep row)_        |
+| `respiratory_rate`         | Sleep / Recovery | Average respiratory rate during sleep (brpm) _(moved to sleep row)_ |
+| `respiratory_rate_min`     | Sleep / Recovery | Minimum respiratory rate during sleep                               |
+| `respiratory_rate_max`     | Sleep / Recovery | Maximum respiratory rate during sleep                               |
+| `spo2_night_score`         | Sleep / Recovery | SpO₂ night score _(moved to sleep row)_                             |
+| `spo2_odi`                 | Sleep / Recovery | Oxygen desaturation index                                           |
+| `spo2_odi_events`          | Sleep / Recovery | Total oxygen desaturation events                                    |
+| `spo2_measured_minutes`    | Sleep / Recovery | Duration of nocturnal SpO₂ monitoring (min)                         |
+| `resting_hr`               | Vitals           | Daily resting heart rate (bpm)                                      |
+| `readiness`                | Readiness        | Overall readiness score (0-100)                                     |
+| `physical_readiness`       | Readiness        | Physical readiness score                                            |
+| `mental_readiness`         | Readiness        | Mental readiness score                                              |
+| `hrv_readiness`            | Readiness        | HRV score contribution to readiness                                 |
+| `rhr_readiness`            | Readiness        | RHR score contribution to readiness                                 |
+| `ahi_readiness`            | Readiness        | Apnea-hypopnea index contribution to readiness                      |
+| `skin_temp_readiness`      | Readiness        | Skin temperature deviation contribution to readiness                |
+| `hybrid_charge`            | Body Battery     | Combined physical & mental charge                                   |
+| `physical_charge`          | Body Battery     | Physical charge score                                               |
+| `mental_charge`            | Body Battery     | Mental charge score                                                 |
+| `hrv_baseline`             | Baselines        | Rolling HRV baseline                                                |
+| `rhr_baseline`             | Baselines        | Rolling RHR baseline                                                |
+| `ahi_baseline`             | Baselines        | Rolling AHI baseline                                                |
+| `steps`                    | Activity         | Total daily step count                                              |
+| `distance`                 | Activity         | Total daily distance (meters)                                       |
+| `active_minutes`           | Activity         | Total active minutes                                                |
+| `active_minutes_goal`      | Activity         | Active minutes target goal                                          |
+| `calories`                 | Activity         | Total daily energy expenditure (kcal)                               |
+| `active_calories`          | Activity         | Active energy expenditure (kcal)                                    |
+| `calorie_goal`             | Activity         | Calorie expenditure goal                                            |
+| `step_goal`                | Activity         | Step count goal                                                     |
+| `running_distance`         | Activity         | Distance covered running (meters)                                   |
+| `cycling_distance`         | Activity         | Distance covered cycling (meters)                                   |
+| `training_load`            | Training         | 7-day rolling training load score                                   |
+| `vo2max`                   | Training         | Estimated VO₂ max (ml/kg/min)                                       |
+| `stress`                   | Stress           | Average daily stress score (0-100)                                  |
+| `stress_min`               | Stress           | Minimum stress recorded                                             |
+| `stress_max`               | Stress           | Maximum stress recorded                                             |
+| `stress_relaxed_pct`       | Stress           | Percentage of time in relaxed state                                 |
+| `stress_normal_pct`        | Stress           | Percentage of time in normal state                                  |
+| `stress_medium_pct`        | Stress           | Percentage of time in medium stress                                 |
+| `stress_high_pct`          | Stress           | Percentage of time in high stress                                   |
+| `pai_daily`                | PAI              | PAI points earned today                                             |
+| `pai_total`                | PAI              | Rolling 7-day PAI score total                                       |
+| `pai_low_zone`             | PAI              | PAI points in low heart rate zone                                   |
+| `pai_low_zone_lower_hr`    | PAI              | Lower HR threshold for low zone                                     |
+| `pai_low_zone_minutes`     | PAI              | Time spent in low zone (minutes)                                    |
+| `pai_medium_zone`          | PAI              | PAI points in medium heart rate zone                                |
+| `pai_medium_zone_lower_hr` | PAI              | Lower HR threshold for medium zone                                  |
+| `pai_medium_zone_minutes`  | PAI              | Time spent in medium zone (minutes)                                 |
+| `pai_high_zone`            | PAI              | PAI points in high heart rate zone                                  |
+| `pai_high_zone_lower_hr`   | PAI              | Lower HR threshold for high zone                                    |
+| `pai_high_zone_minutes`    | PAI              | Time spent in high zone (minutes)                                   |
+| `device_resting_hr`        | Device           | Device firmware reported resting HR                                 |
+| `device_max_hr`            | Device           | Device firmware reported max HR                                     |
+
+### `sleep_sessions` Table (Sleep Sessions)
+
+| Field              | Type    | Description                                  |
+| ------------------ | ------- | -------------------------------------------- |
+| `score`            | integer | Sleep quality score (0-100)                  |
+| `duration_minutes` | integer | Total duration of sleep session              |
+| `deep_minutes`     | integer | Deep sleep duration (minutes)                |
+| `light_minutes`    | integer | Light sleep duration (minutes)               |
+| `rem_minutes`      | integer | REM sleep duration (minutes)                 |
+| `awake_minutes`    | integer | Awake duration during sleep period (minutes) |
+| `wake_count`       | integer | Number of awakenings                         |
