@@ -9,27 +9,17 @@ from typing import Callable
 from puffo_coach.formatter import MarkdownFormatter
 from puffo_coach.models import Activity, CategoryConfig, HealthBundle, Meal
 
-DETAIL_LEVELS = ("high", "medium", "low")
-ALL_MEAL_TYPES = ("colazione", "pranzo", "cena", "merenda")
+VALID_HEALTH_HOURS = (1, 2, 3, 4, 6, 8, 12, 24)
+DEFAULT_HEALTH_HOURS = 6
 
-# Default health metrics per detail level
-HEALTH_METRICS_HIGH = (
-    "resting_hr", "sleep_hrv", "sleep_rhr", "readiness", "steps",
-    "calories", "active_calories", "spo2_night_score", "vo2max",
-    "respiratory_rate", "training_load", "physical_readiness", "mental_readiness",
-)
-HEALTH_METRICS_CORE = (
-    "resting_hr", "sleep_hrv", "readiness", "steps", "calories", "spo2_night_score",
-)
-
-ALL_KNOWN_METRICS = (
-    "resting_hr", "sleep_hrv", "readiness", "steps", "calories", "spo2_night_score",
-    "sleep_rhr", "active_calories", "vo2max", "respiratory_rate", "training_load",
-    "physical_readiness", "mental_readiness", "stress", "distance", "active_minutes",
-)
-
-COMMON_SPORT_TYPES = (
-    "ride", "run", "hike", "walk", "swim", "workout", "virtualride", "weighttraining",
+PRIMARY_SPORT_TYPES = (
+    "Soccer",
+    "Volleyball",
+    "Beach Volleyball",
+    "Workout",
+    "Hike",
+    "Run",
+    "Ride",
 )
 
 DATE_PRESETS: list[tuple[str, str]] = [
@@ -82,7 +72,7 @@ class PipelineStats:
     activities_count: int = 0
     sleep_sessions_count: int = 0
     daily_metrics_count: int = 0
-    hr_hourly_count: int = 0
+    hr_buckets_count: int = 0
 
 
 @dataclass
@@ -115,9 +105,8 @@ def run_pipeline(
     if configs.get("meals") and configs["meals"].enabled:
         from puffo_coach.fetchers.timetagger import TimeTaggerFetcher
 
-        cfg = configs["meals"]
         notify(f"Fetching meals from TimeTagger ({from_date} → {to_date})…")
-        meals = TimeTaggerFetcher().fetch(from_date, to_date, meal_types=cfg.filter)
+        meals = TimeTaggerFetcher().fetch(from_date, to_date)
         stats.meals_count = len(meals)
         notify(f"✓ {len(meals)} meal(s) found.")
 
@@ -128,8 +117,8 @@ def run_pipeline(
         cfg = configs["activities"]
         notify(f"Fetching activities from Strava ({from_date} → {to_date})…")
         activities = StravaFetcher().fetch(
-            from_date, to_date,
-            detail_level=cfg.detail_level,
+            from_date,
+            to_date,
             sport_types=cfg.filter,
         )
         stats.activities_count = len(activities)
@@ -140,19 +129,20 @@ def run_pipeline(
         from puffo_coach.fetchers.zepp_sqlite import ZeppSqliteReader
 
         cfg = configs["health"]
+        bucket_hours = cfg.detail_level if isinstance(cfg.detail_level, int) else DEFAULT_HEALTH_HOURS
         notify(f"Fetching health data from ZeppBridge ({from_date} → {to_date})…")
         health = ZeppSqliteReader().fetch(
-            from_date, to_date,
-            detail_level=cfg.detail_level,
-            metrics=cfg.filter,
+            from_date,
+            to_date,
+            bucket_hours=bucket_hours,
         )
         stats.sleep_sessions_count = len(health.sleep)
         stats.daily_metrics_count = len(health.daily)
-        stats.hr_hourly_count = len(health.hr_hourly)
+        stats.hr_buckets_count = len(health.hr_buckets)
         notify(
             f"✓ {len(health.sleep)} sleep session(s), "
             f"{len(health.daily)} daily metric row(s), "
-            f"{len(health.hr_hourly)} hourly HR record(s)."
+            f"{len(health.hr_buckets)} HR bucket(s)."
         )
 
     # ── Format ────────────────────────────────────────────────────────
