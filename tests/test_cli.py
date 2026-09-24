@@ -4,7 +4,6 @@ import unittest
 from datetime import date
 
 from puffo_coach.cli import build_category_configs, parse_args
-from puffo_coach.pipeline import HEALTH_METRICS_CORE, HEALTH_METRICS_HIGH
 
 
 class TestCli(unittest.TestCase):
@@ -12,41 +11,42 @@ class TestCli(unittest.TestCase):
         args = parse_args([
             "--from-date", "2026-09-01",
             "--to-date", "2026-09-07",
-            "--meals", "colazione,cena",
-            "--activities", "ride",
-            "--activities-detail", "high",
+            "--meals",
+            "--activities", "ride,run",
             "--health",
-            "--detail-level", "medium",
+            "--health-detail", "4",
         ])
         self.assertEqual(args.from_date, date(2026, 9, 1))
         self.assertEqual(args.to_date, date(2026, 9, 7))
-        self.assertEqual(args.meals, "colazione,cena")
-        self.assertEqual(args.activities, "ride")
-        self.assertEqual(args.activities_detail, "high")
-        self.assertEqual(args.health, "all")
+        self.assertTrue(args.meals)
+        self.assertEqual(args.activities, "ride,run")
+        self.assertTrue(args.health)
+        self.assertEqual(args.health_detail, 4)
 
         cfgs = build_category_configs(args)
         self.assertTrue(cfgs["meals"].enabled)
-        self.assertEqual(cfgs["meals"].filter, ["colazione", "cena"])
-        self.assertEqual(cfgs["meals"].detail_level, "medium")
-
         self.assertTrue(cfgs["activities"].enabled)
-        self.assertEqual(cfgs["activities"].filter, ["ride"])
-        self.assertEqual(cfgs["activities"].detail_level, "high")
-
+        self.assertEqual(cfgs["activities"].filter, ["ride", "run"])
         self.assertTrue(cfgs["health"].enabled)
-        self.assertEqual(cfgs["health"].detail_level, "medium")
-        self.assertEqual(cfgs["health"].filter, list(HEALTH_METRICS_CORE))
+        self.assertEqual(cfgs["health"].detail_level, 4)
 
-    def test_parse_args_health_high_default_metrics(self) -> None:
+    def test_parse_args_default_health_detail(self) -> None:
         args = parse_args([
             "--from-date", "2026-09-01",
             "--to-date", "2026-09-07",
             "--health",
-            "--health-detail", "high",
         ])
         cfgs = build_category_configs(args)
-        self.assertEqual(cfgs["health"].filter, list(HEALTH_METRICS_HIGH))
+        self.assertEqual(cfgs["health"].detail_level, 6)
+
+    def test_parse_args_invalid_health_detail(self) -> None:
+        with self.assertRaises(SystemExit):
+            parse_args([
+                "--from-date", "2026-09-01",
+                "--to-date", "2026-09-07",
+                "--health",
+                "--health-detail", "5",
+            ])
 
     def test_parse_args_tui_flag(self) -> None:
         args = parse_args(["--tui"])

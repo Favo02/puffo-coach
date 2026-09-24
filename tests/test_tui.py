@@ -6,7 +6,7 @@ from datetime import date
 from pathlib import Path
 
 from puffo_coach.pipeline import PipelineResult, PipelineStats
-from puffo_coach.tui import PuffoCoachApp
+from puffo_coach.tui import PRIMARY_SPORTS, PuffoCoachApp
 
 
 class TestTuiApp(unittest.IsolatedAsyncioTestCase):
@@ -32,68 +32,40 @@ class TestTuiApp(unittest.IsolatedAsyncioTestCase):
             await pilot.pause(0.1)
             self.assertEqual(app.query_one("#sel_preset").value, "custom")
 
-    async def test_meals_customization(self) -> None:
+    async def test_meals_toggle(self) -> None:
         app = PuffoCoachApp()
         async with app.run_test() as pilot:
-            # Initially all meals enabled
             _, _, cfgs = app._build_configs()
             self.assertTrue(cfgs["meals"].enabled)
-            self.assertEqual(cfgs["meals"].filter, [])
 
-            # Uncheck colazione
-            app.query_one("#chk_meal_colazione").value = False
+            app.query_one("#chk_meals_enabled").value = False
             await pilot.pause(0.1)
-            self.assertFalse(app.query_one("#chk_meals_all").value)
             _, _, cfgs = app._build_configs()
-            self.assertNotIn("colazione", cfgs["meals"].filter)
-            self.assertIn("pranzo", cfgs["meals"].filter)
-
-            # Re-check 'All'
-            app.query_one("#chk_meals_all").value = True
-            await pilot.pause(0.1)
-            self.assertTrue(app.query_one("#chk_meal_colazione").value)
-            _, _, cfgs = app._build_configs()
-            self.assertEqual(cfgs["meals"].filter, [])
+            self.assertFalse(cfgs["meals"].enabled)
 
     async def test_activities_customization(self) -> None:
         app = PuffoCoachApp()
         async with app.run_test() as pilot:
             # Uncheck all sports except ride
-            for s in ("run", "hike", "walk", "swim", "workout"):
-                app.query_one(f"#chk_sport_{s}").value = False
+            for _, slug in PRIMARY_SPORTS:
+                if slug != "ride":
+                    app.query_one(f"#chk_sport_{slug}").value = False
             await pilot.pause(0.1)
             self.assertFalse(app.query_one("#chk_activities_all").value)
 
-            app.query_one("#inp_custom_sports").value = "soccer, trailrun"
+            app.query_one("#inp_custom_sports").value = "padel, tennis"
             await pilot.pause(0.1)
             _, _, cfgs = app._build_configs()
-            self.assertEqual(cfgs["activities"].filter, ["ride", "soccer", "trailrun"])
+            self.assertEqual(cfgs["activities"].filter, ["ride", "padel", "tennis"])
 
-
-    async def test_health_metrics_detail_sync_and_override(self) -> None:
+    async def test_health_detail_selection(self) -> None:
         app = PuffoCoachApp()
         async with app.run_test() as pilot:
-            # Switch global detail to high -> vo2max becomes checked
-            app.query_one("#sel_global_detail").value = "high"
+            app.query_one("#sel_health_detail").value = 12
             await pilot.pause(0.1)
-            self.assertTrue(app.query_one("#chk_metric_vo2max").value)
-
-            # Switch back to low -> vo2max becomes unchecked, resting_hr stays checked
-            app.query_one("#sel_global_detail").value = "low"
-            await pilot.pause(0.1)
-            self.assertFalse(app.query_one("#chk_metric_vo2max").value)
-            self.assertTrue(app.query_one("#chk_metric_resting_hr").value)
-
-            # Manually checking a metric marks defaults as False
-            app.query_one("#chk_metric_vo2max").value = True
-            await pilot.pause(0.1)
-            self.assertFalse(app.query_one("#chk_health_defaults").value)
-
-            # Reset button re-synchronizes with current detail
-            app.query_one("#btn_reset_health_metrics").press()
-            await pilot.pause(0.1)
-            self.assertTrue(app.query_one("#chk_health_defaults").value)
-            self.assertFalse(app.query_one("#chk_metric_vo2max").value)
+            _, _, cfgs = app._build_configs()
+            self.assertTrue(cfgs["health"].enabled)
+            self.assertEqual(cfgs["health"].detail_level, 12)
 
     async def test_render_and_save(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -110,7 +82,6 @@ class TestTuiApp(unittest.IsolatedAsyncioTestCase):
                 app._on_generation_success(dummy, date(2026, 9, 1), date(2026, 9, 7))
                 await pilot.pause(0.1)
 
-                self.assertIsNotNone(app.query_one("#markdown_viewer"))
                 footer = app.query_one("#footer_stats")
                 self.assertIn("Meals: 1", str(footer.content))
 
@@ -131,4 +102,3 @@ class TestTuiApp(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-
