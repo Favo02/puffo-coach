@@ -13,30 +13,35 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical, VerticalScroll
 from textual.widgets import (
-    Button,
     Checkbox,
     Collapsible,
     Footer,
     Header,
     Input,
     Label,
-    Markdown,
     Select,
 )
 
 from puffo_coach.models import CategoryConfig
 from puffo_coach.pipeline import (
-    ALL_KNOWN_METRICS,
-    ALL_MEAL_TYPES,
-    COMMON_SPORT_TYPES,
     DATE_PRESETS,
-    DETAIL_LEVELS,
-    HEALTH_METRICS_CORE,
-    HEALTH_METRICS_HIGH,
+    DEFAULT_HEALTH_HOURS,
+    PRIMARY_SPORT_TYPES,
+    VALID_HEALTH_HOURS,
     PipelineResult,
     get_date_preset,
     run_pipeline,
 )
+
+PRIMARY_SPORTS: list[tuple[str, str]] = [
+    ("Soccer", "soccer"),
+    ("Volleyball", "volleyball"),
+    ("Beach Volleyball", "beach_volleyball"),
+    ("Workout", "workout"),
+    ("Hike", "hike"),
+    ("Run", "run"),
+    ("Ride", "ride"),
+]
 
 
 def copy_text_to_clipboard(text: str, app: App | None = None) -> bool:
@@ -73,11 +78,11 @@ class PuffoCoachApp(App):
     ENABLE_COMMAND_PALETTE = False
 
     BINDINGS = [
-        Binding("g", "generate_context", "Generate Context", priority=True),
-        Binding("c", "copy_context", "Copy to Clipboard"),
-        Binding("s", "save_context", "Save to File"),
-        Binding("d", "toggle_dark", "Toggle Dark"),
-        Binding("q", "quit", "Quit"),
+        Binding("g", "generate_context", "Generate (g)", priority=True),
+        Binding("c", "copy_context", "Copy (c)"),
+        Binding("s", "save_context", "Save (s)"),
+        Binding("d", "toggle_dark", "Dark (d)"),
+        Binding("q", "quit", "Quit (q)"),
     ]
 
     DEFAULT_CSS = """
@@ -85,26 +90,20 @@ class PuffoCoachApp(App):
         background: $surface;
     }
 
-    #actions_bar {
-        height: auto;
+    #status_bar {
+        height: 3;
         dock: top;
         padding: 0 1;
-        background: $surface-darken-1;
-        border-bottom: solid $primary;
+        background: $panel;
+        border-bottom: heavy $accent;
         layout: horizontal;
         align-vertical: middle;
     }
 
-    #actions_bar Button {
-        margin-right: 1;
-        margin-top: 0;
-        margin-bottom: 0;
-    }
-
     #footer_stats {
-        height: auto;
-        margin-left: 1;
-        color: $text-muted;
+        text-style: bold;
+        color: $text;
+        width: 1fr;
     }
 
     #settings_scroll {
@@ -138,16 +137,15 @@ class PuffoCoachApp(App):
         margin-right: 1;
     }
 
-    .grid_2col {
-        layout: grid;
-        grid-size: 2;
-        grid-gutter: 0;
+    .third_col {
+        width: 1fr;
         height: auto;
+        margin-right: 1;
     }
 
-    .grid_3col {
+    .grid_4col {
         layout: grid;
-        grid-size: 3;
+        grid-size: 4;
         grid-gutter: 0;
         height: auto;
     }
@@ -157,13 +155,6 @@ class PuffoCoachApp(App):
         margin-top: 1;
         margin-bottom: 0;
         border: round $primary-darken-2;
-    }
-
-    #preview_container {
-        height: 20;
-        border: solid $primary-darken-1;
-        background: $background;
-        padding: 0 1;
     }
     """
 
@@ -175,36 +166,31 @@ class PuffoCoachApp(App):
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
 
-        # Top action and status bar
-        with Horizontal(id="actions_bar"):
-            yield Button("Generate Context (g)", id="btn_generate", variant="primary")
-            yield Button("Copy to Clipboard (c)", id="btn_copy")
-            yield Button("Save to File (s)", id="btn_save")
-            yield Label("Status: Ready", id="footer_stats")
+        # Prominent status bar
+        with Horizontal(id="status_bar"):
+            yield Label("● Status: Ready (press 'g' to generate context)", id="footer_stats")
 
         # Main settings container
         with VerticalScroll(id="settings_scroll"):
             # ── Date Range ────────────────────────────────────────────
             yield Label("Date Range", classes="section_heading")
-            preset_options = [(label, key) for key, label in DATE_PRESETS] + [("Custom", "custom")]
-            yield Select(preset_options, value="last_7d", id="sel_preset", allow_blank=False)
-
             start_d, end_d = get_date_preset("last_7d")
+            preset_options = [(label, key) for key, label in DATE_PRESETS] + [("Custom", "custom")]
+
             with Horizontal(classes="row"):
-                with Vertical(classes="half_col"):
+                with Vertical(classes="third_col"):
+                    yield Label("Preset", classes="field_label")
+                    yield Select(preset_options, value="last_7d", id="sel_preset", allow_blank=False)
+                with Vertical(classes="third_col"):
                     yield Label("From", classes="field_label")
                     yield Input(value=str(start_d), id="inp_from_date", placeholder="YYYY-MM-DD")
-                with Vertical(classes="half_col"):
+                with Vertical(classes="third_col"):
                     yield Label("To", classes="field_label")
                     yield Input(value=str(end_d), id="inp_to_date", placeholder="YYYY-MM-DD")
 
             # ── General Settings ──────────────────────────────────────
             yield Label("General Settings", classes="section_heading")
-            detail_options = [(lvl.capitalize(), lvl) for lvl in DETAIL_LEVELS]
             with Horizontal(classes="row"):
-                with Vertical(classes="half_col"):
-                    yield Label("Global Detail Level", classes="field_label")
-                    yield Select(detail_options, value="medium", id="sel_global_detail", allow_blank=False)
                 with Vertical(classes="half_col"):
                     yield Label("Output File Path (optional)", classes="field_label")
                     yield Input(placeholder="context_from_...md (blank for auto-name)", id="inp_output_path")
@@ -214,68 +200,33 @@ class PuffoCoachApp(App):
 
             # Meals (TimeTagger)
             with Collapsible(title="Meals (TimeTagger)", id="col_meals", collapsed=False):
-                with Horizontal(classes="row"):
-                    yield Checkbox("Enable Meals", value=True, id="chk_meals_enabled")
-                    yield Checkbox("All Meal Types", value=True, id="chk_meals_all")
-                with Container(classes="grid_2col", id="cnt_meals_types"):
-                    yield Checkbox("Colazione", value=True, id="chk_meal_colazione")
-                    yield Checkbox("Pranzo", value=True, id="chk_meal_pranzo")
-                    yield Checkbox("Cena", value=True, id="chk_meal_cena")
-                    yield Checkbox("Merenda", value=True, id="chk_meal_merenda")
+                yield Checkbox("Enable Meals (all tracked meals)", value=True, id="chk_meals_enabled")
 
             # Activities (Strava)
             with Collapsible(title="Activities (Strava)", id="col_activities", collapsed=False):
                 with Horizontal(classes="row"):
                     yield Checkbox("Enable Activities", value=True, id="chk_activities_enabled")
-                    with Vertical(classes="half_col"):
-                        yield Label("Detail Override", classes="field_label")
-                        act_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
-                        yield Select(act_detail_opts, value="inherit", id="sel_activities_detail", allow_blank=False)
-                yield Checkbox("All Sport Types", value=True, id="chk_activities_all")
-                with Container(classes="grid_3col", id="cnt_activities_types"):
-                    yield Checkbox("Ride", value=True, id="chk_sport_ride")
-                    yield Checkbox("Run", value=True, id="chk_sport_run")
-                    yield Checkbox("Hike", value=True, id="chk_sport_hike")
-                    yield Checkbox("Walk", value=True, id="chk_sport_walk")
-                    yield Checkbox("Swim", value=True, id="chk_sport_swim")
-                    yield Checkbox("Workout", value=True, id="chk_sport_workout")
-                yield Input(placeholder="Custom sports (e.g. soccer, virtualride)", id="inp_custom_sports")
+                    yield Checkbox("All Sport Types", value=True, id="chk_activities_all")
+                with Container(classes="grid_4col", id="cnt_activities_types"):
+                    for label, slug in PRIMARY_SPORTS:
+                        yield Checkbox(label, value=True, id=f"chk_sport_{slug}")
+                yield Input(placeholder="Custom sports (e.g. swim, walk)", id="inp_custom_sports")
 
             # Health Vitals (ZeppBridge)
-            with Collapsible(title="Health Vitals (ZeppBridge)", id="col_health", collapsed=False):
+            with Collapsible(title="Health Vitals & Sleep (ZeppBridge)", id="col_health", collapsed=False):
                 with Horizontal(classes="row"):
-                    yield Checkbox("Enable Health Vitals", value=True, id="chk_health_enabled")
+                    yield Checkbox("Enable Health Vitals & Sleep", value=True, id="chk_health_enabled")
                     with Vertical(classes="half_col"):
-                        yield Label("Detail Override", classes="field_label")
-                        health_detail_opts = [("Inherit (Global)", "inherit")] + detail_options
-                        yield Select(health_detail_opts, value="inherit", id="sel_health_detail", allow_blank=False)
-                with Horizontal(classes="row"):
-                    yield Checkbox("Use defaults for detail level", value=True, id="chk_health_defaults")
-                    yield Button("Reset to Defaults", id="btn_reset_health_metrics")
-
-                yield Label("Core Vitals", classes="field_label")
-                with Container(classes="grid_3col", id="cnt_health_core"):
-                    for metric in HEALTH_METRICS_CORE:
-                        yield Checkbox(metric, value=True, id=f"chk_metric_{metric}")
-
-                yield Label("Advanced Vitals", classes="field_label")
-                with Container(classes="grid_3col", id="cnt_health_adv"):
-                    adv_metrics = [m for m in HEALTH_METRICS_HIGH if m not in HEALTH_METRICS_CORE]
-                    for metric in adv_metrics:
-                        yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
-
-                yield Label("Additional Vitals", classes="field_label")
-                with Container(classes="grid_3col", id="cnt_health_extra"):
-                    extra_metrics = [m for m in ALL_KNOWN_METRICS if m not in HEALTH_METRICS_HIGH]
-                    for metric in extra_metrics:
-                        yield Checkbox(metric, value=False, id=f"chk_metric_{metric}")
-
-                yield Input(placeholder="Additional metrics (e.g. pai_total, afib_readiness)", id="inp_custom_metrics")
-
-            # Output Preview (collapsed by default to keep settings front and center)
-            with Collapsible(title="Output Preview", id="col_preview", collapsed=True):
-                with VerticalScroll(id="preview_container"):
-                    yield Markdown("No context generated yet. Click 'Generate Context' or press 'g'.", id="markdown_viewer")
+                        yield Label("Detail (HR/HRV bucket size)", classes="field_label")
+                        bucket_options = [
+                            (f"{h}h/bucket ({24 // h} entries/day)", h) for h in VALID_HEALTH_HOURS
+                        ]
+                        yield Select(
+                            bucket_options,
+                            value=DEFAULT_HEALTH_HOURS,
+                            id="sel_health_detail",
+                            allow_blank=False,
+                        )
 
         yield Footer()
 
@@ -327,11 +278,6 @@ class PuffoCoachApp(App):
                 self._set_input_programmatic("inp_from_date", str(start_d))
                 self._set_input_programmatic("inp_to_date", str(end_d))
 
-        elif widget_id in ("sel_global_detail", "sel_health_detail"):
-            chk_defaults = self.query_one("#chk_health_defaults", Checkbox)
-            if chk_defaults.value:
-                self._apply_health_defaults_for_current_detail()
-
     def on_input_changed(self, event: Input.Changed) -> None:
         """Switch preset to custom if user manually modifies date inputs."""
         widget_id = event.input.id or ""
@@ -343,72 +289,24 @@ class PuffoCoachApp(App):
             self._set_select_programmatic("sel_preset", "custom")
 
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        """Handle checkboxes logic for meals, activities, and health vitals."""
+        """Handle checkboxes logic for activities sport types."""
         chk_id = event.checkbox.id or ""
         if chk_id in self._programmatic_widgets:
             self._programmatic_widgets.remove(chk_id)
             return
 
-        # Meals all toggle
-        if chk_id == "chk_meals_all":
-            if event.value:
-                for meal_type in ALL_MEAL_TYPES:
-                    self._set_checkbox_programmatic(f"chk_meal_{meal_type}", True)
-
-        elif chk_id.startswith("chk_meal_"):
-            all_checked = all(self.query_one(f"#chk_meal_{m}", Checkbox).value for m in ALL_MEAL_TYPES)
-            self._set_checkbox_programmatic("chk_meals_all", all_checked)
-
         # Activities all toggle
-        elif chk_id == "chk_activities_all":
+        if chk_id == "chk_activities_all":
             if event.value:
-                for sport in ("ride", "run", "hike", "walk", "swim", "workout"):
-                    self._set_checkbox_programmatic(f"chk_sport_{sport}", True)
+                for _, slug in PRIMARY_SPORTS:
+                    self._set_checkbox_programmatic(f"chk_sport_{slug}", True)
 
         elif chk_id.startswith("chk_sport_"):
             all_checked = all(
-                self.query_one(f"#chk_sport_{s}", Checkbox).value
-                for s in ("ride", "run", "hike", "walk", "swim", "workout")
+                self.query_one(f"#chk_sport_{slug}", Checkbox).value
+                for _, slug in PRIMARY_SPORTS
             )
             self._set_checkbox_programmatic("chk_activities_all", all_checked)
-
-        # Health metrics customization
-        elif chk_id == "chk_health_defaults":
-            if event.value:
-                self._apply_health_defaults_for_current_detail()
-
-        elif chk_id.startswith("chk_metric_"):
-            self._set_checkbox_programmatic("chk_health_defaults", False)
-
-    def on_button_pressed(self, event: Button.Pressed) -> None:
-        """Handle button clicks."""
-        if event.button.id == "btn_generate":
-            self.action_generate_context()
-        elif event.button.id == "btn_copy":
-            self.action_copy_context()
-        elif event.button.id == "btn_save":
-            self.action_save_context()
-        elif event.button.id == "btn_reset_health_metrics":
-            self._set_checkbox_programmatic("chk_health_defaults", True)
-            self._apply_health_defaults_for_current_detail()
-            self.notify("Health metrics reset to defaults.", severity="information")
-
-    # ── Detail & Metrics Helpers ──────────────────────────────────────
-
-    def _get_effective_health_detail(self) -> str:
-        """Return the effective health detail level."""
-        h_detail = str(self.query_one("#sel_health_detail", Select).value)
-        if h_detail != "inherit":
-            return h_detail
-        return str(self.query_one("#sel_global_detail", Select).value)
-
-    def _apply_health_defaults_for_current_detail(self) -> None:
-        """Sync metric checkboxes with the current effective health detail level."""
-        eff_detail = self._get_effective_health_detail()
-        defaults = HEALTH_METRICS_HIGH if eff_detail == "high" else HEALTH_METRICS_CORE
-
-        for metric in ALL_KNOWN_METRICS:
-            self._set_checkbox_programmatic(f"chk_metric_{metric}", metric in defaults)
 
     # ── Build Configuration ───────────────────────────────────────────
 
@@ -430,33 +328,17 @@ class PuffoCoachApp(App):
         if from_date > to_date:
             raise ValueError("From Date must be earlier than or equal to To Date.")
 
-        global_detail = str(self.query_one("#sel_global_detail", Select).value)
-
         # ── Meals ─────────────────────────────────────────────────────
         meals_enabled = self.query_one("#chk_meals_enabled", Checkbox).value
-        meals_filter: list[str] = []
-        if not self.query_one("#chk_meals_all", Checkbox).value:
-            meals_filter = [
-                m for m in ALL_MEAL_TYPES
-                if self.query_one(f"#chk_meal_{m}", Checkbox).value
-            ]
-
-        meals_cfg = CategoryConfig(
-            enabled=meals_enabled,
-            filter=meals_filter,
-            detail_level=global_detail,
-        )
+        meals_cfg = CategoryConfig(enabled=meals_enabled)
 
         # ── Activities ────────────────────────────────────────────────
         act_enabled = self.query_one("#chk_activities_enabled", Checkbox).value
-        act_detail_raw = str(self.query_one("#sel_activities_detail", Select).value)
-        act_detail = global_detail if act_detail_raw == "inherit" else act_detail_raw
-
         act_filter: list[str] = []
         if not self.query_one("#chk_activities_all", Checkbox).value:
-            for s in ("ride", "run", "hike", "walk", "swim", "workout"):
-                if self.query_one(f"#chk_sport_{s}", Checkbox).value:
-                    act_filter.append(s)
+            for label, slug in PRIMARY_SPORTS:
+                if self.query_one(f"#chk_sport_{slug}", Checkbox).value:
+                    act_filter.append(label.lower())
             custom_sports = self.query_one("#inp_custom_sports", Input).value.strip()
             if custom_sports:
                 act_filter.extend([s.strip().lower() for s in custom_sports.split(",") if s.strip()])
@@ -464,32 +346,14 @@ class PuffoCoachApp(App):
         activities_cfg = CategoryConfig(
             enabled=act_enabled,
             filter=act_filter,
-            detail_level=act_detail,
         )
 
         # ── Health ────────────────────────────────────────────────────
         health_enabled = self.query_one("#chk_health_enabled", Checkbox).value
-        health_detail_raw = str(self.query_one("#sel_health_detail", Select).value)
-        health_detail = global_detail if health_detail_raw == "inherit" else health_detail_raw
-
-        health_filter: list[str] = []
-        chk_defaults = self.query_one("#chk_health_defaults", Checkbox)
-        if not chk_defaults.value:
-            for metric in ALL_KNOWN_METRICS:
-                chk = self.query(f"#chk_metric_{metric}")
-                if chk and chk.first().value:
-                    health_filter.append(metric)
-            custom_metrics = self.query_one("#inp_custom_metrics", Input).value.strip()
-            if custom_metrics:
-                health_filter.extend([m.strip().lower() for m in custom_metrics.split(",") if m.strip()])
-        else:
-            health_filter = list(
-                HEALTH_METRICS_HIGH if health_detail == "high" else HEALTH_METRICS_CORE
-            )
+        health_detail = int(self.query_one("#sel_health_detail", Select).value)
 
         health_cfg = CategoryConfig(
             enabled=health_enabled,
-            filter=health_filter,
             detail_level=health_detail,
         )
 
@@ -533,19 +397,16 @@ class PuffoCoachApp(App):
 
     def _update_progress(self, msg: str) -> None:
         """Update progress text in the actions bar."""
-        self.query_one("#footer_stats", Label).update(f"Status: {msg}")
+        self.query_one("#footer_stats", Label).update(f"⏳ {msg}")
 
     def _on_generation_success(
         self, result: PipelineResult, from_date: date, to_date: date
     ) -> None:
-        """Update state and markdown preview with generated context."""
+        """Update state with generated context."""
         self.last_result = result
-        md = self.query_one("#markdown_viewer", Markdown)
-        self.run_worker(md.update(result.markdown))
-
         stats = result.stats
         stats_msg = (
-            f"Status: Done ({from_date} → {to_date} | "
+            f"✓ Done ({from_date} → {to_date} | "
             f"Meals: {stats.meals_count} | "
             f"Activities: {stats.activities_count} | "
             f"Sleep: {stats.sleep_sessions_count} | "
@@ -553,26 +414,17 @@ class PuffoCoachApp(App):
             f"Chars: {len(result.markdown):,})"
         )
         self.query_one("#footer_stats", Label).update(stats_msg)
-        self.notify("Context generated successfully.", severity="information")
+        self.notify("Context generated successfully. Press 'c' to copy or 's' to save.", severity="information")
 
     def _on_generation_error(self, error_msg: str) -> None:
-        """Display error status and error report."""
-        md = self.query_one("#markdown_viewer", Markdown)
-        self.run_worker(
-            md.update(
-                f"### Error Generating Context\n\n```\n{error_msg}\n```\n\n"
-                "Please check your credentials, network connection, or database path in `.env`."
-            )
-        )
-        col = self.query_one("#col_preview", Collapsible)
-        col.collapsed = False
-        self.query_one("#footer_stats", Label).update(f"Status: Error - {error_msg}")
-        self.notify("Generation failed. See preview for details.", severity="error")
+        """Display error status."""
+        self.query_one("#footer_stats", Label).update(f"✗ Error: {error_msg}")
+        self.notify(f"Generation failed: {error_msg}", severity="error")
 
     def action_copy_context(self) -> None:
         """Copy the generated markdown to clipboard."""
         if not self.last_result or not self.last_result.markdown:
-            self.notify("No context generated yet. Click 'Generate Context' first.", severity="warning")
+            self.notify("No context generated yet. Press 'g' first.", severity="warning")
             return
 
         text = self.last_result.markdown
@@ -585,7 +437,7 @@ class PuffoCoachApp(App):
     def action_save_context(self) -> None:
         """Save the generated markdown to disk."""
         if not self.last_result or not self.last_result.markdown:
-            self.notify("No context generated yet. Click 'Generate Context' first.", severity="warning")
+            self.notify("No context generated yet. Press 'g' first.", severity="warning")
             return
 
         from_raw = self.query_one("#inp_from_date", Input).value.strip()
