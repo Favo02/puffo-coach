@@ -65,11 +65,12 @@ class StravaFetcher(BaseFetcher):
             detail = self._get_detail(activity_id)
 
             has_gps = bool(summary.get("start_latlng"))
+            has_native_splits = bool(detail.get("splits_metric"))
 
-            # Fetch HR stream for non-GPS activities → 10 time-based HR chunks.
+            # Chunks are used ONLY for activities without Strava API-native km splits.
             hr_chunks: list[HrChunk] = []
             min_hr: float | None = None
-            if not has_gps and summary.get("has_heartrate"):
+            if not has_native_splits and summary.get("has_heartrate"):
                 time_data, hr_data = self._fetch_hr_stream(activity_id)
                 if time_data and hr_data:
                     hr_chunks = self._compute_hr_chunks(time_data, hr_data)
@@ -214,15 +215,10 @@ class StravaFetcher(BaseFetcher):
                 pace_zone=s.get("pace_zone"),
             ))
 
-        # Dynamic split merging: >51 km → merge the tail into 5 km chunks.
+        # Dynamic split merging: >50 km → group ALL kms into 5 km groups.
         total_dist_km = summary.get("distance", 0.0) / 1000
-        if total_dist_km > 51 and raw_splits:
-            head = raw_splits[:51]
-            tail = raw_splits[51:]
-            merged_tail = self._merge_splits(tail, 5) if tail else []
-            for j, ms in enumerate(merged_tail):
-                ms.split = 51 + j + 1
-            raw_splits = head + merged_tail
+        if total_dist_km > 50 and raw_splits:
+            raw_splits = self._merge_splits(raw_splits, 5)
 
         gear = detail.get("gear", {})
         gear_name = gear.get("name") if isinstance(gear, dict) else None
