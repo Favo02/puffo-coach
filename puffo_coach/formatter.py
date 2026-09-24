@@ -1,30 +1,35 @@
 """Markdown formatter with XML-structured output for LLM consumption."""
 
+from __future__ import annotations
+
 import collections
 from datetime import date, time
 from typing import Any
 
 from puffo_coach.models import (
-    Activity, ActivitySplit, CategoryConfig, DailyMetricRow, HealthBundle,
-    HrHourly, Meal, SleepSession, SleepStage,
+    Activity,
+    ActivitySplit,
+    CategoryConfig,
+    DailyMetricRow,
+    HealthBundle,
+    HrBucket,
+    HrChunk,
+    Meal,
+    SleepSession,
 )
 
 
 class MarkdownFormatter:
-    """Renders domain objects into XML-in-Markdown, respecting per-category detail levels."""
+    """Renders domain objects into XML-in-Markdown."""
 
     def __init__(self, configs: dict[str, CategoryConfig]) -> None:
-        """Initialize with per-category configuration.
+        """Initialize with category configuration.
 
         Args:
             configs: Dict mapping category name ('meals', 'activities', 'health')
-                     to its CategoryConfig with detail_level.
+                     to its CategoryConfig.
         """
         self._configs = configs
-
-    def _detail(self, category: str) -> str:
-        """Get the detail level for a category."""
-        return self._configs[category].detail_level
 
     def render(
         self,
@@ -48,8 +53,6 @@ class MarkdownFormatter:
         return "\n".join(parts)
 
     # ── Meals ─────────────────────────────────────────────────────────
-    # Meals are always rendered fully — compression has minimal benefit
-    # given the low data volume (~3–5 entries/day).
 
     def _render_meals(self, meals: list[Meal]) -> str:
         parts = ["<meals>"]
@@ -69,182 +72,209 @@ class MarkdownFormatter:
     # ── Health (vitals + sleep) ───────────────────────────────────────
 
     def _render_health(self, health: HealthBundle) -> str:
-        detail = self._detail("health")
         parts = []
-        if health.daily:
-            parts.append(self._render_vitals(health, detail))
+        if health.daily or health.hr_buckets:
+            parts.append(self._render_vitals(health))
         if health.sleep:
-            parts.append(self._render_sleep(health.sleep, detail))
+            parts.append(self._render_sleep(health.sleep))
         return "\n".join(parts)
 
-    def _render_vitals(self, health: HealthBundle, detail: str) -> str:
+    def _render_vitals(self, health: HealthBundle) -> str:
         daily_map = self._pivot_daily_metrics(health.daily)
         parts = ["<vitals>"]
 
-        if detail == "high":
-            hr_by_day: dict[str, list[HrHourly]] = collections.defaultdict(list)
-            if health.hr_hourly:
-                for h in health.hr_hourly:
-                    hr_by_day[h.day].append(h)
+        hr_by_day: dict[str, list[HrBucket]] = collections.defaultdict(list)
+        if health.hr_buckets:
+            for b in health.hr_buckets:
+                hr_by_day[b.day].append(b)
 
-            for day, metrics in sorted(daily_map.items()):
-                attrs = [f'date="{day}"']
-                for k, v in sorted(metrics.items()):
-                    attrs.append(f'{k}="{self._fmt_val(v)}"')
+        all_days = sorted(set(list(daily_map.keys()) + list(hr_by_day.keys())))
 
-                attr_str = " ".join(attrs)
+        for day in all_days:
+            attrs = [f'date="{day}"']
+            metrics = daily_map.get(day, {})
+            for k, v in sorted(metrics.items()):
+                attrs.append(f'{k}="{self._fmt_val(v)}"')
 
-                if day in hr_by_day:
-                    parts.append(f"<day {attr_str}>")
-                    parts.append("  <hr_hourly>")
-                    for hr in sorted(hr_by_day[day], key=lambda x: x.hour):
-                        parts.append(f'    <h hour="{hr.hour}" avg="{hr.avg_hr}" min="{hr.min_hr}" max="{hr.max_hr}"/>')
-                    parts.append("  </hr_hourly>")
-                    parts.append("</day>")
-                else:
-                    parts.append(f"<day {attr_str}/>")
+            attr_str = " ".join(attrs)
 
-        elif detail == "medium":
-            for day, metrics in sorted(daily_map.items()):
-                attrs = [f'date="{day}"']
-                for k, v in sorted(metrics.items()):
-                    attrs.append(f'{k}="{self._fmt_val(v)}"')
-                parts.append(f"<day {' '.join(attrs)}/>")
-
-        else:  # low
-            metrics_acc: dict[str, list[float]] = collections.defaultdict(list)
-            for metrics in daily_map.values():
-                for k, v in metrics.items():
-                    metrics_acc[k].append(v)
-
-            days_count = len(daily_map)
-
-            def get_stats(key: str) -> tuple[float, float, float] | None:
-                if key not in metrics_acc or not metrics_acc[key]:
-                    return None
-                vals = metrics_acc[key]
-                return sum(vals) / len(vals), min(vals), max(vals)
-
-            summary_parts = [f"{days_count} days."]
-
-            rhr = get_stats("resting_hr")
-            if rhr:
-                summary_parts.append(f"Resting HR: avg {int(rhr[0])} ({int(rhr[1])}–{int(rhr[2])}).")
-
-            steps = get_stats("steps")
-            if steps:
-                summary_parts.append(f"Steps: avg {int(steps[0])}/day.")
-
-            readiness = get_stats("readiness")
-            if readiness:
-                summary_parts.append(f"Readiness: avg {int(readiness[0])}.")
-
-            hrv = get_stats("sleep_hrv")
-            if hrv:
-                summary_parts.append(f"Sleep HRV: avg {int(hrv[0])} ms.")
-
-            spo2 = get_stats("spo2_night")
-            if spo2:
-                summary_parts.append(f"SpO₂ night: avg {int(spo2[0])}.")
-
-            parts.append(" ".join(summary_parts))
+            if day in hr_by_day and hr_by_day[day]:
+                parts.append(f"<day {attr_str}>")
+                parts.append("  <hr_buckets>")
+                for b in sorted(hr_by_day[day], key=lambda x: x.start_hour):
+                    start_str = f"{b.start_hour:02d}:00"
+                    end_str = f"{b.end_hour:02d}:00" if b.end_hour < 24 else "24:00"
+                    b_attrs = [
+                        f'start="{start_str}"',
+                        f'end="{end_str}"',
+                        f'avg_hr="{b.avg_hr}"',
+                        f'min_hr="{b.min_hr}"',
+                        f'max_hr="{b.max_hr}"',
+                    ]
+                    if b.avg_hrv is not None:
+                        b_attrs.append(f'avg_hrv="{self._fmt_val(b.avg_hrv)}"')
+                    parts.append(f"    <bucket {' '.join(b_attrs)}/>")
+                parts.append("  </hr_buckets>")
+                parts.append("</day>")
+            else:
+                parts.append(f"<day {attr_str}/>")
 
         parts.append("</vitals>")
         return "\n".join(parts)
 
-    def _render_sleep(self, sessions: list[SleepSession], detail: str) -> str:
+    def _render_sleep(self, sessions: list[SleepSession]) -> str:
         parts = ["<sleep>"]
 
-        if detail == "high":
-            for s in sorted(sessions, key=lambda x: x.start_time):
-                attrs = [
-                    f'date="{s.start_time[:10]}"',
-                    f'score="{s.score if s.score is not None else 0}"',
-                    f'total_min="{s.duration_min}"',
-                    f'deep="{s.deep_min}"',
-                    f'light="{s.light_min}"',
-                    f'rem="{s.rem_min}"',
-                    f'awake="{s.awake_min}"',
-                    f'wakes="{s.wake_count if s.wake_count is not None else 0}"',
-                    f'start="{self._format_time(s.start_time)}"',
-                    f'end="{self._format_time(s.end_time)}"',
-                ]
-                parts.append(f"<night {' '.join(attrs)}>")
-                if s.stages:
-                    parts.append("  <stages>")
-                    for stage in s.stages:
-                        parts.append(
-                            f'    <s stage="{stage.stage}" '
-                            f'start="{self._format_time(stage.start_time)}" '
-                            f'end="{self._format_time(stage.end_time)}"/>'
-                        )
-                    parts.append("  </stages>")
-                parts.append("</night>")
+        for s in sorted(sessions, key=lambda x: x.start_time):
+            attrs = [
+                f'date="{s.start_time[:10]}"',
+                f'score="{s.score if s.score is not None else 0}"',
+                f'total_min="{s.duration_min}"',
+                f'deep="{s.deep_min}"',
+                f'light="{s.light_min}"',
+                f'rem="{s.rem_min}"',
+                f'awake="{s.awake_min}"',
+                f'wakes="{s.wake_count if s.wake_count is not None else 0}"',
+                f'start="{self._format_time(s.start_time)}"',
+                f'end="{self._format_time(s.end_time)}"',
+            ]
+            if s.resp_rate is not None:
+                attrs.append(f'resp_rate="{self._fmt_val(s.resp_rate)}"')
+            if s.sleep_hrv is not None:
+                attrs.append(f'sleep_hrv="{self._fmt_val(s.sleep_hrv)}"')
+            if s.sleep_rhr is not None:
+                attrs.append(f'sleep_rhr="{self._fmt_val(s.sleep_rhr)}"')
+            if s.spo2_night is not None:
+                attrs.append(f'spo2_night="{self._fmt_val(s.spo2_night)}"')
 
-        elif detail == "medium":
-            for s in sorted(sessions, key=lambda x: x.start_time):
-                total_hr = round(s.duration_min / 60, 1)
-                attrs = [
-                    f'date="{s.start_time[:10]}"',
-                    f'score="{s.score if s.score is not None else 0}"',
-                    f'total_hr="{total_hr}"',
-                    f'deep="{s.deep_min}"',
-                    f'rem="{s.rem_min}"',
-                ]
-                parts.append(f"<night {' '.join(attrs)}/>")
-
-        else:  # low
-            if sessions:
-                count = len(sessions)
-                scores = [s.score for s in sessions if s.score is not None]
-                avg_score = int(sum(scores) / len(scores)) if scores else 0
-                avg_dur = round(sum(s.duration_min for s in sessions) / (count * 60), 1)
-                avg_deep = int(sum(s.deep_min for s in sessions) / count)
-                avg_rem = int(sum(s.rem_min for s in sessions) / count)
-
-                parts.append(
-                    f"{count} nights. Avg score: {avg_score}. Avg duration: {avg_dur}h. "
-                    f"Avg deep: {avg_deep} min. Avg REM: {avg_rem} min."
-                )
+            parts.append(f"<night {' '.join(attrs)}/>")
 
         parts.append("</sleep>")
         return "\n".join(parts)
 
     # ── Activities ────────────────────────────────────────────────────
 
+    @staticmethod
+    def _classify_sport(sport_type: str) -> str:
+        s = sport_type.lower()
+        if "beach" in s and "volley" in s:
+            return "beach_volleyball"
+        if "volley" in s:
+            return "volleyball"
+        if "soccer" in s or "football" in s:
+            return "soccer"
+        if "workout" in s or "weight" in s or "crossfit" in s:
+            return "workout"
+        if "hike" in s:
+            return "hike"
+        if "run" in s:
+            return "run"
+        if "ride" in s:
+            return "ride"
+        return "other"
+
     def _render_activities(self, activities: list[Activity]) -> str:
-        detail = self._detail("activities")
         parts = ["<activities>"]
 
         for act in sorted(activities, key=lambda x: x.start_date_local):
             date_str = act.start_date_local[:10]
             dur_str = self._format_duration(act.moving_time_s)
             dist_km = round(act.distance_m / 1000, 1)
+            sport = self._classify_sport(act.sport_type)
 
-            if detail == "high":
-                attrs = [
-                    f'date="{date_str}"',
-                    f'type="{act.sport_type}"',
-                    f'name="{act.name}"',
-                    f'duration="{dur_str}"',
-                    f'distance_km="{dist_km}"',
-                ]
+            attrs = [
+                f'date="{date_str}"',
+                f'type="{act.sport_type}"',
+                f'name="{act.name}"',
+                f'duration="{dur_str}"',
+            ]
+
+            if sport in ("ride", "run", "hike"):
+                attrs.append(f'distance_km="{dist_km}"')
                 if act.total_elevation_gain is not None:
                     attrs.append(f'elevation_m="{int(act.total_elevation_gain)}"')
-                if act.calories is not None:
-                    attrs.append(f'calories="{int(act.calories)}"')
                 if act.average_heartrate is not None:
                     attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
                 if act.max_heartrate is not None:
                     attrs.append(f'max_hr="{int(act.max_heartrate)}"')
-                if act.suffer_score is not None:
-                    attrs.append(f'suffer_score="{act.suffer_score}"')
+                if act.average_cadence is not None:
+                    attrs.append(f'avg_cadence="{int(act.average_cadence)}"')
+                if act.relative_effort is not None:
+                    attrs.append(f'relative_effort="{act.relative_effort}"')
 
+            elif sport == "soccer":
+                if act.has_gps and act.distance_m > 0:
+                    attrs.append(f'distance_km="{dist_km}"')
+                if act.average_heartrate is not None:
+                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
+                if act.max_heartrate is not None:
+                    attrs.append(f'max_hr="{int(act.max_heartrate)}"')
+                if act.min_heartrate is not None:
+                    attrs.append(f'min_hr="{int(act.min_heartrate)}"')
+                if act.relative_effort is not None:
+                    attrs.append(f'relative_effort="{act.relative_effort}"')
+
+            elif sport in ("volleyball", "beach_volleyball"):
+                if act.average_heartrate is not None:
+                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
+                if act.max_heartrate is not None:
+                    attrs.append(f'max_hr="{int(act.max_heartrate)}"')
+                if act.min_heartrate is not None:
+                    attrs.append(f'min_hr="{int(act.min_heartrate)}"')
+                if act.relative_effort is not None:
+                    attrs.append(f'relative_effort="{act.relative_effort}"')
+
+            elif sport == "workout":
+                if act.has_gps and act.distance_m > 0:
+                    attrs.append(f'distance_km="{dist_km}"')
+                if act.average_heartrate is not None:
+                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
+                if act.max_heartrate is not None:
+                    attrs.append(f'max_hr="{int(act.max_heartrate)}"')
+                if act.min_heartrate is not None:
+                    attrs.append(f'min_hr="{int(act.min_heartrate)}"')
+                if act.relative_effort is not None:
+                    attrs.append(f'relative_effort="{act.relative_effort}"')
+
+            else:  # other
+                if act.distance_m > 0:
+                    attrs.append(f'distance_km="{dist_km}"')
+                if act.total_elevation_gain is not None and act.total_elevation_gain > 0:
+                    attrs.append(f'elevation_m="{int(act.total_elevation_gain)}"')
+                if act.average_heartrate is not None:
+                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
+                if act.max_heartrate is not None:
+                    attrs.append(f'max_hr="{int(act.max_heartrate)}"')
+                if act.min_heartrate is not None:
+                    attrs.append(f'min_hr="{int(act.min_heartrate)}"')
+                if act.relative_effort is not None:
+                    attrs.append(f'relative_effort="{act.relative_effort}"')
+
+            has_children = bool(act.hr_chunks or act.splits_metric)
+            if not has_children:
+                parts.append(f"<activity {' '.join(attrs)}/>")
+            else:
                 parts.append(f"<activity {' '.join(attrs)}>")
+                if act.hr_chunks:
+                    parts.append("  <hr_chunks>")
+                    for c in act.hr_chunks:
+                        chunk_attrs = [
+                            f'n="{c.chunk}"',
+                            f'start="{c.start_time}"',
+                            f'end="{c.end_time}"',
+                            f'avg_hr="{c.avg_hr}"',
+                            f'min_hr="{c.min_hr}"',
+                            f'max_hr="{c.max_hr}"',
+                        ]
+                        parts.append(f"    <chunk {' '.join(chunk_attrs)}/>")
+                    parts.append("  </hr_chunks>")
+
                 if act.splits_metric:
                     parts.append("  <splits>")
                     for s in act.splits_metric:
                         split_attrs = [f'n="{s.split}"', f'time="{self._format_pace(s.moving_time)}"']
+                        if s.distance > 1500:
+                            split_attrs.append(f'dist_km="{round(s.distance / 1000, 1)}"')
                         if s.average_heartrate is not None:
                             split_attrs.append(f'avg_hr="{int(s.average_heartrate)}"')
                         if s.elevation_difference is not None:
@@ -253,41 +283,6 @@ class MarkdownFormatter:
                         parts.append(f"    <km {' '.join(split_attrs)}/>")
                     parts.append("  </splits>")
                 parts.append("</activity>")
-
-            elif detail == "medium":
-                attrs = [
-                    f'date="{date_str}"',
-                    f'type="{act.sport_type}"',
-                    f'name="{act.name}"',
-                    f'duration="{dur_str}"',
-                    f'distance_km="{dist_km}"',
-                ]
-                if act.average_heartrate is not None:
-                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
-                if act.max_heartrate is not None:
-                    attrs.append(f'max_hr="{int(act.max_heartrate)}"')
-
-                parts.append(f"<activity {' '.join(attrs)}>")
-                if act.splits_metric:
-                    parts.append("  <splits>")
-                    for s in act.splits_metric:
-                        split_attrs = [f'n="{s.split}"', f'time="{self._format_pace(s.moving_time)}"']
-                        if s.average_heartrate is not None:
-                            split_attrs.append(f'avg_hr="{int(s.average_heartrate)}"')
-                        parts.append(f"    <km {' '.join(split_attrs)}/>")
-                    parts.append("  </splits>")
-                parts.append("</activity>")
-
-            else:  # low
-                attrs = [
-                    f'date="{date_str}"',
-                    f'type="{act.sport_type}"',
-                    f'distance_km="{dist_km}"',
-                    f'duration="{dur_str}"',
-                ]
-                if act.average_heartrate is not None:
-                    attrs.append(f'avg_hr="{int(act.average_heartrate)}"')
-                parts.append(f"<activity {' '.join(attrs)}/>")
 
         parts.append("</activities>")
         return "\n".join(parts)
@@ -326,15 +321,11 @@ class MarkdownFormatter:
     def _pivot_daily_metrics(rows: list[DailyMetricRow]) -> dict[str, dict[str, float]]:
         metric_map = {
             "resting_hr": "resting_hr",
-            "sleep_hrv": "sleep_hrv",
-            "sleep_rhr": "sleep_rhr",
             "readiness": "readiness",
             "steps": "steps",
             "calories": "calories",
             "active_calories": "active_cal",
-            "spo2_night_score": "spo2_night",
             "vo2max": "vo2max",
-            "respiratory_rate": "resp_rate",
             "training_load": "training_load",
             "physical_readiness": "physical_readiness",
             "mental_readiness": "mental_readiness",
