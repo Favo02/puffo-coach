@@ -67,12 +67,24 @@ class ZeppSqliteReader(BaseFetcher):
     def _query_sleep(
         self, conn: sqlite3.Connection, from_date: date, to_date: date
     ) -> list[SleepSession]:
-        """Query sleep sessions and attach sleep-related daily vitals."""
+        """Query sleep sessions and attach sleep-related daily vitals.
+
+        ZeppBridge v3 stores the same night twice: once from the band
+        (``provider = 'legacy'``) and once from the Zepp cloud
+        (``provider = 'official'``, without ``wake_count``). Band rows are
+        preferred; official rows are kept only when no band row overlaps.
+        """
         query = """
             SELECT sleep_id, start_time, end_time, score, duration_minutes,
                    deep_minutes, light_minutes, rem_minutes, awake_minutes, wake_count
-              FROM sleep_sessions
+              FROM sleep_sessions s
              WHERE date(start_time) BETWEEN ? AND ?
+               AND (s.provider <> 'official'
+                    OR NOT EXISTS (
+                        SELECT 1 FROM sleep_sessions o
+                         WHERE o.provider <> 'official'
+                           AND o.start_time < s.end_time
+                           AND o.end_time > s.start_time))
              ORDER BY start_time;
         """
         cur = conn.execute(query, (str(from_date), str(to_date)))
