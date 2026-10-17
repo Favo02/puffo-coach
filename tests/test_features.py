@@ -1,10 +1,13 @@
 """Unit tests for newly added features and edge case fixes."""
 
+import sqlite3
 import unittest
-from datetime import date, time
+from datetime import date, datetime, time
+from unittest.mock import MagicMock, patch
 
 from puffo_coach.fetchers.strava import StravaFetcher
-from puffo_coach.fetchers.timetagger import _parse_meal_food
+from puffo_coach.fetchers.timetagger import TimeTaggerFetcher, _parse_meal_food
+from puffo_coach.fetchers.zepp_sqlite import ZeppSqliteReader
 from puffo_coach.formatter import MarkdownFormatter
 from puffo_coach.models import (
     Activity,
@@ -191,6 +194,69 @@ class TestStravaSplitMerging(unittest.TestCase):
         self.assertEqual(merged[0].split, 1)
         self.assertEqual(merged[10].split, 11)
         self.assertEqual(merged[10].distance, 5000.0)
+
+
+class TestMedicine(unittest.TestCase):
+    def test_fetch_extracts_medicine_and_meal_from_same_record(self) -> None:
+        fetcher = TimeTaggerFetcher.__new__(TimeTaggerFetcher)
+        fetcher.url, fetcher.token = "http://tt", "token"
+        t1 = int(datetime(2026, 10, 16, 13, 0).timestamp())
+        records = {"records": [
+            {"t1": t1, "ds": "#medicinale [aspirina]"},
+            {"t1": t1 + 60, "ds": "#pranzo [pasta] #medicinale [aspirina]"},
+            {"t1": t1 + 120, "ds": "#lavoro"},
+        ]}
+        with patch("puffo_coach.fetchers.timetagger.requests.get") as get:
+            get.return_value = MagicMock(json=MagicMock(return_value=records))
+            entries = fetcher.fetch(date(2026, 10, 16), date(2026, 10, 16))
+
+        self.assertEqual(
+            [(e.meal_type, e.food) for e in entries],
+            [("medicinale", "aspirina"), ("pranzo", "pasta"), ("medicinale", "aspirina")],
+        )
+
+    def test_medicine_rendered_as_medicine_element(self) -> None:
+        formatter = MarkdownFormatter({"meals": CategoryConfig(enabled=True)})
+        meals = [
+            Meal(date=date(2026, 10, 16), time=time(13, 0), meal_type="pranzo", food="pasta"),
+            Meal(date=date(2026, 10, 16), time=time(14, 0), meal_type="medicinale", food="aspirina"),
+        ]
+        out = formatter.render(meals, [], None, "2026-10-16", "2026-10-16")
+        self.assertIn('<meal time="13:00" type="pranzo">pasta</meal>', out)
+        self.assertIn('<medicine time="14:00">aspirina</medicine>', out)
+
+
+class TestZeppSleepDedup(unittest.TestCase):
+    def setUp(self) -> None:
+        self.conn = sqlite3.connect(":memory:")
+        self.conn.row_factory = sqlite3.Row
+        self.conn.executescript("""
+            CREATE TABLE sleep_sessions (
+                sleep_id TEXT, start_time TEXT, end_time TEXT, score INTEGER,
+                duration_minutes INTEGER, deep_minutes INTEGER, light_minutes INTEGER,
+                rem_minutes INTEGER, awake_minutes INTEGER, wake_count INTEGER,
+                provider TEXT
+            );
+            CREATE TABLE daily_metrics (date TEXT, metric TEXT, value REAL, unit TEXT);
+        """)
+        self.reader = ZeppSqliteReader.__new__(ZeppSqliteReader)
+
+    def _insert(self, sleep_id: str, start: str, end: str, wake_count: int | None, provider: str) -> None:
+        self.conn.execute(
+            "INSERT INTO sleep_sessions VALUES (?, ?, ?, 70, 400, 60, 250, 80, 10, ?, ?)",
+            (sleep_id, start, end, wake_count, provider),
+        )
+
+    def test_official_duplicate_dropped_in_favour_of_band_row(self) -> None:
+        self._insert("band:1", "2026-10-10T23:00:00+00:00", "2026-10-11T07:00:00+00:00", 3, "legacy")
+        self._insert("official:1", "2026-10-10T23:00:00+00:00", "2026-10-11T07:00:00+00:00", None, "official")
+        # Official-only night (no band row) must be kept.
+        self._insert("official:2", "2026-10-11T23:00:00+00:00", "2026-10-12T07:00:00+00:00", None, "official")
+
+        sessions = self.reader._query_sleep(self.conn, date(2026, 10, 10), date(2026, 10, 12))
+
+        self.assertEqual([s.sleep_id for s in sessions], ["band:1", "official:2"])
+        self.assertEqual(sessions[0].wake_count, 3)
 
 
 if __name__ == "__main__":
