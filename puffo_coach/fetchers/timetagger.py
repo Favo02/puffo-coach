@@ -13,10 +13,12 @@ from puffo_coach.models import Meal
 from puffo_coach.fetchers.base import BaseFetcher
 
 MEAL_TAGS = ('colazione', 'pranzo', 'cena', 'merenda')
+MEDICINE_TAG = 'medicinale'
 _MEAL_TAG_RE = re.compile(
     r'#(' + '|'.join(MEAL_TAGS) + r')\b',
     re.IGNORECASE,
 )
+_MEDICINE_TAG_RE = re.compile(r'#(' + MEDICINE_TAG + r')\b', re.IGNORECASE)
 
 
 def _parse_meal_food(ds: str, tag_end: int) -> str:
@@ -40,7 +42,7 @@ def _parse_meal_food(ds: str, tag_end: int) -> str:
 
 
 class TimeTaggerFetcher(BaseFetcher):
-    """Fetches meal records from TimeTagger and parses them into Meal objects."""
+    """Fetches meal and medicine records from TimeTagger and parses them into Meal objects."""
 
     def __init__(self) -> None:
         """Initialize the fetcher and ensure TimeTagger configuration is present."""
@@ -52,11 +54,12 @@ class TimeTaggerFetcher(BaseFetcher):
         to_date: date,
         **kwargs: Any,
     ) -> list[Meal]:
-        """Fetch meals from TimeTagger for the given date range.
+        """Fetch meals and medicines from TimeTagger for the given date range.
 
-        All records containing a meal tag are returned. If a record has no
-        bracketed food description (or another ``#tag`` appears before the
-        bracket), the food is set to ``'UNKNOWN'``.
+        All records containing a meal tag or ``#medicinale`` are returned
+        (a record with both yields two entries). If a tag has no bracketed
+        description (or another ``#tag`` appears before the bracket), the
+        food is set to ``'UNKNOWN'``.
 
         Args:
             from_date: Start of range (inclusive).
@@ -82,24 +85,22 @@ class TimeTaggerFetcher(BaseFetcher):
 
         for record in data.get("records", []):
             ds = record.get("ds", "")
-            match = _MEAL_TAG_RE.search(ds)
-            if not match:
+            matches = [m for m in (_MEAL_TAG_RE.search(ds), _MEDICINE_TAG_RE.search(ds)) if m]
+            if not matches:
                 continue
-
-            meal_type = match.group(1).lower()
-            food = _parse_meal_food(ds, match.end())
 
             record_t1 = record.get("t1")
             if record_t1 is None:
                 continue
 
             dt = datetime.fromtimestamp(record_t1)
-            meals.append(Meal(
-                date=dt.date(),
-                time=dt.time(),
-                meal_type=meal_type,
-                food=food,
-            ))
+            for match in matches:
+                meals.append(Meal(
+                    date=dt.date(),
+                    time=dt.time(),
+                    meal_type=match.group(1).lower(),
+                    food=_parse_meal_food(ds, match.end()),
+                ))
 
         meals.sort(key=lambda m: (m.date, m.time))
         return meals

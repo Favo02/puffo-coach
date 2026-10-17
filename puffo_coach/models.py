@@ -34,7 +34,7 @@ class CategoryConfig:
 class Meal:
     date: date
     time: time
-    meal_type: str       # colazione | pranzo | cena | merenda
+    meal_type: str       # colazione | pranzo | cena | merenda | medicinale
     food: str            # raw string from brackets, or UNKNOWN
 
 

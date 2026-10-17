@@ -63,7 +63,10 @@ class MarkdownFormatter:
         for d in sorted(by_date.keys()):
             parts.append(f'<day date="{d.isoformat()}">')
             for m in sorted(by_date[d], key=lambda x: x.time):
-                parts.append(f'  <meal time="{m.time.strftime("%H:%M")}" type="{m.meal_type}">{m.food}</meal>')
+                if m.meal_type == "medicinale":
+                    parts.append(f'  <medicine time="{m.time.strftime("%H:%M")}">{m.food}</medicine>')
+                else:
+                    parts.append(f'  <meal time="{m.time.strftime("%H:%M")}" type="{m.meal_type}">{m.food}</meal>')
             parts.append("</day>")
 
         parts.append("</meals>")
