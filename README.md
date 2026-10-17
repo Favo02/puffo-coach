@@ -32,6 +32,8 @@ Meals are parsed by searching for the tags `#colazione`, `#pranzo`, `#cena`, or 
 
 _Example_: `#colazione al bar [brioche, cappuccio]` is extracted as meal type `colazione` with food items `brioche, cappuccio`.
 
+Medicines are tracked the same way with the `#medicinale` tag: `#medicinale [aspirina]` is rendered as `<medicine time="..">aspirina</medicine>` alongside the day's meals.
+
 ### Strava
 
 1. Navigate to [strava.com/settings/api](https://www.strava.com/settings/api) and create an application:
@@ -129,6 +131,7 @@ uv run puffo-coach --from-date 2026-09-01 --to-date 2026-09-07 \
 - All meals tagged with `#colazione`, `#pranzo`, `#cena`, or `#merenda` are included.
 - Food descriptions in brackets following the tag are extracted (e.g. `#colazione [yogurt, caffè]` -> `yogurt, caffè`).
 - If no brackets exist or an intermediate tag is present (e.g. `#pranzo #friends [Mario]`), description defaults to `UNKNOWN`.
+- Medicines tagged with `#medicinale` (e.g. `#medicinale [aspirina]`) are included in the same day timeline as `<medicine>` entries. A record carrying both a meal tag and `#medicinale` yields both entries.
 
 ### Activities
 
