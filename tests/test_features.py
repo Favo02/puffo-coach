@@ -215,6 +215,21 @@ class TestMedicine(unittest.TestCase):
             [("medicinale", "aspirina"), ("pranzo", "pasta"), ("medicinale", "aspirina")],
         )
 
+    def test_fetch_assigns_midnight_spanning_meal_only_to_start_day(self) -> None:
+        fetcher = TimeTaggerFetcher.__new__(TimeTaggerFetcher)
+        fetcher.url, fetcher.token = "http://tt", "token"
+        start = int(datetime(2026, 10, 31, 23, 57).timestamp())
+        end = int(datetime(2026, 11, 1, 0, 35).timestamp())
+        records = {"records": [{"t1": start, "t2": end, "ds": "#cena [pizza]"}]}
+
+        with patch("puffo_coach.fetchers.timetagger.requests.get") as get:
+            get.return_value = MagicMock(json=MagicMock(return_value=records))
+            october = fetcher.fetch(date(2026, 10, 1), date(2026, 10, 31))
+            november = fetcher.fetch(date(2026, 11, 1), date(2026, 11, 30))
+
+        self.assertEqual([(e.date, e.food) for e in october], [(date(2026, 10, 31), "pizza")])
+        self.assertEqual(november, [])
+
     def test_medicine_rendered_as_medicine_element(self) -> None:
         formatter = MarkdownFormatter({"meals": CategoryConfig(enabled=True)})
         meals = [
