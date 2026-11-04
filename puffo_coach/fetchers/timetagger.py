@@ -56,8 +56,8 @@ class TimeTaggerFetcher(BaseFetcher):
     ) -> list[Meal]:
         """Fetch meals and medicines from TimeTagger for the given date range.
 
-        All records containing a meal tag or ``#medicinale`` are returned
-        (a record with both yields two entries). If a tag has no bracketed
+        All records starting within the range and containing a meal tag or
+        ``#medicinale`` are returned (a record with both yields two entries). If a tag has no bracketed
         description (or another ``#tag`` appears before the bracket), the
         food is set to ``'UNKNOWN'``.
 
@@ -89,8 +89,10 @@ class TimeTaggerFetcher(BaseFetcher):
             if not matches:
                 continue
 
+            # TimeTagger returns every record overlapping the range, so a meal
+            # spanning midnight would also appear in the following range.
             record_t1 = record.get("t1")
-            if record_t1 is None:
+            if record_t1 is None or not t1 <= record_t1 <= t2:
                 continue
 
             dt = datetime.fromtimestamp(record_t1)
